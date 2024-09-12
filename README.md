@@ -13,99 +13,111 @@
 ## Service Boundaries
 ![Scheme](./images/scheme.png)
 
-* **User Management Service:** Handles user registration, authentication, profile management, and communication.
-* **Driver Management Service:** Manages driver registration, verification, ratings, and earnings.
-* **Ride Matching Service:**  Matches riders with available drivers based on proximity and other criteria.
-* **Location Tracking Service:** Tracks the real-time location of drivers and riders during trips.
-* **Payment Service:** Handles payment processing for rides.
-* **Notification Service:** Sends notifications to users and drivers (e.g., ride requests, driver arrival, payment confirmations).
+* **User Management & Location Tracking Service:** Handles user registration, authentication, profile management, and communication. Tracks the real-time location of drivers and riders during trips
+* **Ride Matching & Payment Service:**  Matches riders with available drivers based on proximity and other criteria. Handles payment processing for rides.
 
 ## Technology Stack and Communication Patterns
 
-* **User/Driver Management Service:**
+* **User/Driver Management & Location Service:**
+    * Language: Node.js
+    * Framework: Express (gRPC server) + Socket.IO
+    * Database: PostgreSQL & Redis
+    * Exposes gRPC endpoints for user/driver management and real-time location updates
+* **Ride & Payment Service:**
+    * Language: Node.js
+    * Framework: Express (gRPC server)
+    * Database: MongoDB + Payment Gateway Integration
+    * Exposes gRPC endpoints for ride matching and payment processing
+* **API Gateway:**
     * Language: Python
     * Framework: Flask (RESTful API)
-    * Database: PostgreSQL
-* **Ride Matching Service:**
-    * Language: Node.js
-    * Framework: Express (RESTful API)
-    * Database: MongoDB
-* **Location Tracking Service:**
-    * Language: Node.js 
-    * Framework: Socket.IO 
-    * Database: Redis (for real-time data)
-* **Payment Service:**
-    * Language: Python
-    * Framework: Flask (RESTful API)
-    * Integration with Payment Gateway (e.g., Stripe)
-* **Notification Service:**
-    * Language: Node.js
-    * Framework: Express (RESTful API)
-    * Integration with Push Notification Services (e.g., Firebase Cloud Messaging)
+    * Handles external requests and routes them to appropriate microservices using gRPC
 
 ## Data Management
-* **User Management Service:**
+* **User Management & Delivery Service:**
 ```
     /api/users/register - Creates a new user account.
     /api/users/login - Authenticates a user and returns a session token.
     /api/users/profile - Retrieves user profile details.
     /api/users/profile/update - Updates user profile information.
-```
-* **Driver Management Service:**
-
-```
     /api/drivers/register - Registers a new driver.
     /api/drivers/verify - Verifies a driver's documents and information.
     /api/drivers/location - Updates a driver's real-time location.
     /api/drivers/earnings - Retrieves a driver's earnings history.
+    /api/notifications/send - Sends a notification to a user or driver.
 ```
-* **Ride Matching Service:**
+
+* **Ride Matching & Payment Service:**
 
 ```
     /api/rides/request - Requests a ride from a user.
     /api/rides/match - Matches a rider with an available driver.
     /api/rides/status - Retrieves the current status of a ride.
     /api/rides/review - Leaving a commenet/mark for the ride.
-```
-
-* **Payment Service:**
-
-```
     /api/payments/process - Processes payment for a completed ride.
     /api/payments/history - Processes payment for a completed ride.
     /api/payments/confirmation - Processes payment for a completed ride.
     /api/payments/status - Processes payment for a completed ride.
 ```
+## User Management & Delivery Service
 
-* **Notification Service:**
+**POST /api/users/register**
 
-```
-    /api/notifications/send - Sends a notification to a user or driver.
-```
+```json
+{
+  "name": "Ion Popescu",
+  "email": "[ion.popescu@gmail.com",
+  "password": "securepassword123",
+  "phone_number": "+373 69 123 456" 
+}
 
-* **Location Tracking Service:** *
-
-```
-   // Emitted by driver's client
-    {
-      "event": "location_update",
-      "driver_id": "67890",
-      "latitude": 47.003670,
-      "longitude": 28.907089
-    }
-    
-    // Emitted to rider's client (subscribed to a specific ride)
-    {
-      "event": "driver_location_update",
-      "ride_id": "54321",
-      "driver_location": {
-      "latitude": 47.003672,
-      "longitude": 28.907091
-      }
-    }
 ```
 
 
+**POST /api/drivers/location**
+
+```json
+{
+  "driver_id": "98765",
+  "latitude": 47.010312, 
+  "longitude": 28.843458 
+}
+
+```
+## Ride Matching & Payment Service
+
+
+**POST /api/rides/request**
+
+```json
+{
+  "rider_id": "12345",
+  "origin_latitude": 46.989223, 
+  "origin_longitude": 28.851459, 
+  "destination_latitude": 47.024099, 
+  "destination_longitude": 28.830384 
+}
+```
+
+**POST /api/notifications/send**
+
+```json
+{
+  "user_id": "12345", 
+  "message": "Your ride is arriving in 5 minutes!"
+}
+```
+
+**POST /api/payments/process**
+
+```json
+{
+  "ride_id": "54321",
+  "amount": 15.75, 
+  "payment_method": "card",
+  "card_details": { 1234 4567 8900 1234 } 
+}
+```
 
 ## Deployment and Scaling
 

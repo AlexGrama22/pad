@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import user_location_pb2 as user__location__pb2
+import ride_payment_pb2 as ride__payment__pb2
 
 GRPC_GENERATED_VERSION = '1.66.2'
 GRPC_VERSION = grpc.__version__
@@ -18,14 +18,14 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + f' but the generated code in user_location_pb2_grpc.py depends on'
+        + f' but the generated code in ride_payment_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
     )
 
 
-class UserLocationServiceStub(object):
+class RidePaymentServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -34,43 +34,43 @@ class UserLocationServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.SendLocation = channel.unary_unary(
-                '/userLocation.UserLocationService/SendLocation',
-                request_serializer=user__location__pb2.UserRequest.SerializeToString,
-                response_deserializer=user__location__pb2.LocationResponse.FromString,
+        self.ProcessPayment = channel.unary_unary(
+                '/RidePaymentService/ProcessPayment',
+                request_serializer=ride__payment__pb2.PaymentRequest.SerializeToString,
+                response_deserializer=ride__payment__pb2.PaymentResponse.FromString,
                 _registered_method=True)
 
 
-class UserLocationServiceServicer(object):
+class RidePaymentServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def SendLocation(self, request, context):
+    def ProcessPayment(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
 
-def add_UserLocationServiceServicer_to_server(servicer, server):
+def add_RidePaymentServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'SendLocation': grpc.unary_unary_rpc_method_handler(
-                    servicer.SendLocation,
-                    request_deserializer=user__location__pb2.UserRequest.FromString,
-                    response_serializer=user__location__pb2.LocationResponse.SerializeToString,
+            'ProcessPayment': grpc.unary_unary_rpc_method_handler(
+                    servicer.ProcessPayment,
+                    request_deserializer=ride__payment__pb2.PaymentRequest.FromString,
+                    response_serializer=ride__payment__pb2.PaymentResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'userLocation.UserLocationService', rpc_method_handlers)
+            'RidePaymentService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('userLocation.UserLocationService', rpc_method_handlers)
+    server.add_registered_method_handlers('RidePaymentService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class UserLocationService(object):
+class RidePaymentService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def SendLocation(request,
+    def ProcessPayment(request,
             target,
             options=(),
             channel_credentials=None,
@@ -83,9 +83,9 @@ class UserLocationService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/userLocation.UserLocationService/SendLocation',
-            user__location__pb2.UserRequest.SerializeToString,
-            user__location__pb2.LocationResponse.FromString,
+            '/RidePaymentService/ProcessPayment',
+            ride__payment__pb2.PaymentRequest.SerializeToString,
+            ride__payment__pb2.PaymentResponse.FromString,
             options,
             channel_credentials,
             insecure,

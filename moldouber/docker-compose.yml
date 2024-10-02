@@ -7,22 +7,40 @@ services:
     depends_on:
       - user-location-service
       - ride-payment-service
+    environment:
+          - RIDE_PAYMENT_HOST=ride-payment-service
+          - RIDE_PAYMENT_PORT=50052
+          - USER_LOCATION_HOST=user-location-service
+          - USER_LOCATION_PORT=50051
     networks:
       - moldo-net
 
   ride-payment-service:
     build: ./ride-payment-service
+    volumes:
+      - ./proto:/usr/src/proto  
     ports:
       - "50052:50052"
+    environment:
+      - USER_LOCATION_HOST=user-location-service
+      - USER_LOCATION_PORT=50051
     networks:
       - moldo-net
 
   user-location-service:
     build: ./user-location-service
+
+    volumes:
+      - ./proto:/usr/src/proto
+    
     ports:
       - "50051:50051"
     depends_on:
       - postgres
+    environment:
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+      - POSTGRES_DB=userlocationdb
     networks:
       - moldo-net
 
@@ -58,6 +76,7 @@ services:
 volumes:
   pgdata:
   mongodata:
+  proto:
 
 networks:
   moldo-net:

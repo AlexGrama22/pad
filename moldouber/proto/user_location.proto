@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package userLocation;  // Ensure this matches with your code's usage
+package userLocation;
 
 service UserLocationService {
   rpc SendLocation (UserRequest) returns (LocationResponse) {}

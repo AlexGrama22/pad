@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package userLocation;  // Ensure this matches with your code's usage
+
+service UserLocationService {
+  rpc SendLocation (UserRequest) returns (LocationResponse) {}
+}
+
+message UserRequest {
+  string userId = 1;
+}
+
+message LocationResponse {
+  string userId = 1;
+  float latitude = 2;
+  float longitude = 3;
+}

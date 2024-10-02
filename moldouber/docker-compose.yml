@@ -1,0 +1,63 @@
+version: '3.8'
+services:
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "5000:5000"
+    depends_on:
+      - user-location-service
+      - ride-payment-service
+    networks:
+      - moldo-net
+
+  ride-payment-service:
+    build: ./ride-payment-service
+    ports:
+      - "50052:50052"
+    networks:
+      - moldo-net
+
+  user-location-service:
+    build: ./user-location-service
+    ports:
+      - "50051:50051"
+    depends_on:
+      - postgres
+    networks:
+      - moldo-net
+
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: userlocationdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - moldo-net
+
+  redis:
+    image: redis:7.4
+    ports:
+      - "6379:6379"
+    networks:
+      - moldo-net
+
+  mongo:
+    image: mongo:8.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+    networks:
+      - moldo-net
+
+volumes:
+  pgdata:
+  mongodata:
+
+networks:
+  moldo-net:

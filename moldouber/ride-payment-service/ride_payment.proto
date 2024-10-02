@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+service RidePaymentService {
+  rpc ProcessPayment (PaymentRequest) returns (PaymentResponse) {}
+}
+
+message PaymentRequest {
+  string rideId = 1;
+  float amount = 2;
+}
+
+message PaymentResponse {
+  string status = 1;
+}

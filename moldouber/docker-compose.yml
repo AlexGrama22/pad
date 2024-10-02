@@ -21,6 +21,7 @@ services:
       - ./proto:/usr/src/proto  
     ports:
       - "50052:50052"
+      - "4000:4000"    # Status endpoint
     environment:
       - USER_LOCATION_HOST=user-location-service
       - USER_LOCATION_PORT=50051
@@ -35,6 +36,7 @@ services:
     
     ports:
       - "50051:50051"
+      - "4001:4001"    # Status endpoint
     depends_on:
       - postgres
     environment:

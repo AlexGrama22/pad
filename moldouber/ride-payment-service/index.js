@@ -1,21 +1,31 @@
 const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
+const { MongoClient } = require('mongodb');
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const app = express();
 
 const PROTO_PATH = '/usr/src/proto/ride_payment.proto';
 const packageDefinition = protoLoader.loadSync(PROTO_PATH);
-const ridePaymentProto = grpc.loadPackageDefinition(packageDefinition).RidePaymentService;
+const ridePaymentProto = grpc.loadPackageDefinition(packageDefinition).ride_payment;
 
-// Mock Payment Status
-const paymentStatus = {};
+// MongoDB client setup
+const mongoClient = new MongoClient('mongodb://mongo:27017', { useUnifiedTopology: true });
+
+let paymentsCollection;
+
+mongoClient.connect().then((client) => {
+  const db = client.db('ridepaymentdb');
+  paymentsCollection = db.collection('payments');
+  console.log('Connected to MongoDB');
+});
 
 // PayRide method
 async function payRide(call, callback) {
   const { rideId, amount, userId } = call.request;
 
-  paymentStatus[rideId] = 'orderPaid';  // Mark as paid for now
+  // Store payment info in MongoDB
+  await paymentsCollection.insertOne({ rideId, amount, userId, status: 'orderPaid' });
 
   callback(null, { rideId, status: 'orderPaid' });
 }
@@ -24,13 +34,17 @@ async function payRide(call, callback) {
 async function processPayment(call, callback) {
   const { rideId } = call.request;
 
-  const status = paymentStatus[rideId] || 'notPaid';
+  const payment = await paymentsCollection.findOne({ rideId });
 
-  callback(null, { rideId, status });
+  if (!payment) {
+    callback({
+      code: grpc.status.NOT_FOUND,
+      message: 'Payment not found'
+    });
+    return;
+  }
 
-  // setTimeout(() => {
-  //   callback(null, { rideId, status });
-  // }, 11000); // 11-second delay
+  callback(null, { rideId, status: payment.status });
 }
 
 // gRPC server setup
@@ -49,7 +63,6 @@ app.get('/status', (req, res) => {
     res.status(200).json({ status: 'Ride Payment Service is running' });
 });
 
-// Start the status server
 app.listen(4000, () => {
   console.log('Ride Payment Service Status Endpoint is running on port 4000');
 });

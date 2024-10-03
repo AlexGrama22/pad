@@ -24,21 +24,21 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12ride_payment.proto\x12\x12RidePaymentService\"@\n\x0ePaymentRequest\x12\x0e\n\x06rideId\x18\x01 \x01(\t\x12\x0e\n\x06\x61mount\x18\x02 \x01(\x02\x12\x0e\n\x06userId\x18\x03 \x01(\t\"1\n\x0fPaymentResponse\x12\x0e\n\x06rideId\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\"\'\n\x15ProcessPaymentRequest\x12\x0e\n\x06rideId\x18\x01 \x01(\t\"8\n\x16ProcessPaymentResponse\x12\x0e\n\x06rideId\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t2\xd1\x01\n\x12RidePaymentService\x12R\n\x07PayRide\x12\".RidePaymentService.PaymentRequest\x1a#.RidePaymentService.PaymentResponse\x12g\n\x0eProcessPayment\x12).RidePaymentService.ProcessPaymentRequest\x1a*.RidePaymentService.ProcessPaymentResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12ride_payment.proto\x12\x0cride_payment\"@\n\x0ePayRideRequest\x12\x0e\n\x06rideId\x18\x01 \x01(\t\x12\x0e\n\x06\x61mount\x18\x02 \x01(\x02\x12\x0e\n\x06userId\x18\x03 \x01(\t\"1\n\x0fPayRideResponse\x12\x0e\n\x06rideId\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\"\'\n\x15ProcessPaymentRequest\x12\x0e\n\x06rideId\x18\x01 \x01(\t\"8\n\x16ProcessPaymentResponse\x12\x0e\n\x06rideId\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t2\xb9\x01\n\x12RidePaymentService\x12\x46\n\x07PayRide\x12\x1c.ride_payment.PayRideRequest\x1a\x1d.ride_payment.PayRideResponse\x12[\n\x0eProcessPayment\x12#.ride_payment.ProcessPaymentRequest\x1a$.ride_payment.ProcessPaymentResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'ride_payment_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_PAYMENTREQUEST']._serialized_start=42
-  _globals['_PAYMENTREQUEST']._serialized_end=106
-  _globals['_PAYMENTRESPONSE']._serialized_start=108
-  _globals['_PAYMENTRESPONSE']._serialized_end=157
-  _globals['_PROCESSPAYMENTREQUEST']._serialized_start=159
-  _globals['_PROCESSPAYMENTREQUEST']._serialized_end=198
-  _globals['_PROCESSPAYMENTRESPONSE']._serialized_start=200
-  _globals['_PROCESSPAYMENTRESPONSE']._serialized_end=256
-  _globals['_RIDEPAYMENTSERVICE']._serialized_start=259
-  _globals['_RIDEPAYMENTSERVICE']._serialized_end=468
+  _globals['_PAYRIDEREQUEST']._serialized_start=36
+  _globals['_PAYRIDEREQUEST']._serialized_end=100
+  _globals['_PAYRIDERESPONSE']._serialized_start=102
+  _globals['_PAYRIDERESPONSE']._serialized_end=151
+  _globals['_PROCESSPAYMENTREQUEST']._serialized_start=153
+  _globals['_PROCESSPAYMENTREQUEST']._serialized_end=192
+  _globals['_PROCESSPAYMENTRESPONSE']._serialized_start=194
+  _globals['_PROCESSPAYMENTRESPONSE']._serialized_end=250
+  _globals['_RIDEPAYMENTSERVICE']._serialized_start=253
+  _globals['_RIDEPAYMENTSERVICE']._serialized_end=438
 # @@protoc_insertion_point(module_scope)

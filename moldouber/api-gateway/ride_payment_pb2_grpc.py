@@ -35,12 +35,12 @@ class RidePaymentServiceStub(object):
             channel: A grpc.Channel.
         """
         self.PayRide = channel.unary_unary(
-                '/RidePaymentService.RidePaymentService/PayRide',
-                request_serializer=ride__payment__pb2.PaymentRequest.SerializeToString,
-                response_deserializer=ride__payment__pb2.PaymentResponse.FromString,
+                '/ride_payment.RidePaymentService/PayRide',
+                request_serializer=ride__payment__pb2.PayRideRequest.SerializeToString,
+                response_deserializer=ride__payment__pb2.PayRideResponse.FromString,
                 _registered_method=True)
         self.ProcessPayment = channel.unary_unary(
-                '/RidePaymentService.RidePaymentService/ProcessPayment',
+                '/ride_payment.RidePaymentService/ProcessPayment',
                 request_serializer=ride__payment__pb2.ProcessPaymentRequest.SerializeToString,
                 response_deserializer=ride__payment__pb2.ProcessPaymentResponse.FromString,
                 _registered_method=True)
@@ -66,8 +66,8 @@ def add_RidePaymentServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'PayRide': grpc.unary_unary_rpc_method_handler(
                     servicer.PayRide,
-                    request_deserializer=ride__payment__pb2.PaymentRequest.FromString,
-                    response_serializer=ride__payment__pb2.PaymentResponse.SerializeToString,
+                    request_deserializer=ride__payment__pb2.PayRideRequest.FromString,
+                    response_serializer=ride__payment__pb2.PayRideResponse.SerializeToString,
             ),
             'ProcessPayment': grpc.unary_unary_rpc_method_handler(
                     servicer.ProcessPayment,
@@ -76,9 +76,9 @@ def add_RidePaymentServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'RidePaymentService.RidePaymentService', rpc_method_handlers)
+            'ride_payment.RidePaymentService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('RidePaymentService.RidePaymentService', rpc_method_handlers)
+    server.add_registered_method_handlers('ride_payment.RidePaymentService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -99,9 +99,9 @@ class RidePaymentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/RidePaymentService.RidePaymentService/PayRide',
-            ride__payment__pb2.PaymentRequest.SerializeToString,
-            ride__payment__pb2.PaymentResponse.FromString,
+            '/ride_payment.RidePaymentService/PayRide',
+            ride__payment__pb2.PayRideRequest.SerializeToString,
+            ride__payment__pb2.PayRideResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -126,7 +126,7 @@ class RidePaymentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/RidePaymentService.RidePaymentService/ProcessPayment',
+            '/ride_payment.RidePaymentService/ProcessPayment',
             ride__payment__pb2.ProcessPaymentRequest.SerializeToString,
             ride__payment__pb2.ProcessPaymentResponse.FromString,
             options,

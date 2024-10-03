@@ -1,6 +1,7 @@
 const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
-const redis = require('redis'); // Add Redis
+const { Pool } = require('pg'); // PostgreSQL client
+const redis = require('redis');
 const { v4: uuidv4 } = require('uuid');  // For generating IDs
 const express = require('express');
 const app = express();
@@ -13,13 +14,22 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH);
 const ridePaymentDefinition = protoLoader.loadSync(RIDE_PAYMENT_PROTO_PATH);
 
 const userLocationProto = grpc.loadPackageDefinition(packageDefinition).userLocation;
-const ridePaymentProto = grpc.loadPackageDefinition(ridePaymentDefinition).RidePaymentService;
+const ridePaymentProto = grpc.loadPackageDefinition(ridePaymentDefinition).ride_payment;
+
+// PostgreSQL client setup
+const pool = new Pool({
+  user: process.env.POSTGRES_USER,
+  host: 'postgres', // Container name for PostgreSQL
+  database: process.env.POSTGRES_DB,
+  password: process.env.POSTGRES_PASSWORD,
+  port: 5432,
+});
 
 // Redis client setup
 const redisClient = redis.createClient({
   url: 'redis://redis:6379'
 });
-redisClient.connect(); // Make sure to connect the client
+redisClient.connect(); // Connect Redis client
 
 // Mock function to calculate estimated price
 function calculateEstimatedPrice(startLatitude, startLongitude, endLatitude, endLongitude) {
@@ -48,7 +58,7 @@ async function makeOrder(call, callback) {
   callback(null, { orderId, estimatedPrice });
 }
 
-// AcceptOrder method with Redis cache
+// AcceptOrder method with PostgreSQL insert
 async function acceptOrder(call, callback) {
   const { orderId, driverId } = call.request;
 
@@ -66,6 +76,21 @@ async function acceptOrder(call, callback) {
   const order = JSON.parse(orderData);
   const rideId = uuidv4();  // Generate unique rideId
 
+  // Store ride info in PostgreSQL
+  try {
+    await pool.query(
+      'INSERT INTO rides (userId, rideId, driverId) VALUES ($1, $2, $3)',
+      [order.userId, rideId, driverId]
+    );
+  } catch (err) {
+    console.error('Error saving to PostgreSQL:', err);
+    callback({
+      code: grpc.status.INTERNAL,
+      message: 'Error saving ride data'
+    });
+    return;
+  }
+
   // Respond with the stored values
   callback(null, { 
     rideId, 
@@ -81,7 +106,6 @@ async function acceptOrder(call, callback) {
 async function finishOrder(call, callback) {
   const { rideId, realPrice } = call.request;
 
-  // For now, assume notPaid status
   const paymentStatus = 'notPaid';
 
   callback(null, { paymentStatus });
@@ -91,7 +115,6 @@ async function finishOrder(call, callback) {
 async function paymentCheck(call, callback) {
   const { rideId } = call.request;
 
-  // Create the gRPC client for RidePaymentService
   const ridePaymentClient = new ridePaymentProto.RidePaymentService(
     'ride-payment-service:50052',  
     grpc.credentials.createInsecure()
@@ -99,7 +122,6 @@ async function paymentCheck(call, callback) {
 
   const paymentRequest = { rideId };
 
-  // Call the ProcessPayment method in RidePaymentService with a 10-second timeout
   const deadline = new Date();
   deadline.setSeconds(deadline.getSeconds() + 10);
 

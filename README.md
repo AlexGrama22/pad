@@ -125,9 +125,9 @@
 ### Accessing PostgreSQL (User Management & Delivery Service)
 To check the data in PostgreSQL:
 ```bash
-docker exec -it <container_name> psql -U <postgres_user> -d <postgres_db>
+docker exec -it <container_name> psql -U myuser -d userlocationdb
+SELECT * FROM rides;
 ```
-Replace `<container_name>`, `<postgres_user>`, and `<postgres_db>` with the appropriate values.
 
 ### Accessing MongoDB (Ride Payment Service)
 To check payment data in MongoDB:

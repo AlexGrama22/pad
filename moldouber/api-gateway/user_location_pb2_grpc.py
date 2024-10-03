@@ -34,17 +34,50 @@ class UserLocationServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.SendLocation = channel.unary_unary(
-                '/userLocation.UserLocationService/SendLocation',
-                request_serializer=user__location__pb2.UserRequest.SerializeToString,
-                response_deserializer=user__location__pb2.LocationResponse.FromString,
+        self.MakeOrder = channel.unary_unary(
+                '/userLocation.UserLocationService/MakeOrder',
+                request_serializer=user__location__pb2.OrderRequest.SerializeToString,
+                response_deserializer=user__location__pb2.OrderResponse.FromString,
+                _registered_method=True)
+        self.AcceptOrder = channel.unary_unary(
+                '/userLocation.UserLocationService/AcceptOrder',
+                request_serializer=user__location__pb2.AcceptOrderRequest.SerializeToString,
+                response_deserializer=user__location__pb2.AcceptOrderResponse.FromString,
+                _registered_method=True)
+        self.FinishOrder = channel.unary_unary(
+                '/userLocation.UserLocationService/FinishOrder',
+                request_serializer=user__location__pb2.FinishOrderRequest.SerializeToString,
+                response_deserializer=user__location__pb2.FinishOrderResponse.FromString,
+                _registered_method=True)
+        self.PaymentCheck = channel.unary_unary(
+                '/userLocation.UserLocationService/PaymentCheck',
+                request_serializer=user__location__pb2.PaymentCheckRequest.SerializeToString,
+                response_deserializer=user__location__pb2.PaymentCheckResponse.FromString,
                 _registered_method=True)
 
 
 class UserLocationServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def SendLocation(self, request, context):
+    def MakeOrder(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AcceptOrder(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def FinishOrder(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PaymentCheck(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -53,10 +86,25 @@ class UserLocationServiceServicer(object):
 
 def add_UserLocationServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'SendLocation': grpc.unary_unary_rpc_method_handler(
-                    servicer.SendLocation,
-                    request_deserializer=user__location__pb2.UserRequest.FromString,
-                    response_serializer=user__location__pb2.LocationResponse.SerializeToString,
+            'MakeOrder': grpc.unary_unary_rpc_method_handler(
+                    servicer.MakeOrder,
+                    request_deserializer=user__location__pb2.OrderRequest.FromString,
+                    response_serializer=user__location__pb2.OrderResponse.SerializeToString,
+            ),
+            'AcceptOrder': grpc.unary_unary_rpc_method_handler(
+                    servicer.AcceptOrder,
+                    request_deserializer=user__location__pb2.AcceptOrderRequest.FromString,
+                    response_serializer=user__location__pb2.AcceptOrderResponse.SerializeToString,
+            ),
+            'FinishOrder': grpc.unary_unary_rpc_method_handler(
+                    servicer.FinishOrder,
+                    request_deserializer=user__location__pb2.FinishOrderRequest.FromString,
+                    response_serializer=user__location__pb2.FinishOrderResponse.SerializeToString,
+            ),
+            'PaymentCheck': grpc.unary_unary_rpc_method_handler(
+                    servicer.PaymentCheck,
+                    request_deserializer=user__location__pb2.PaymentCheckRequest.FromString,
+                    response_serializer=user__location__pb2.PaymentCheckResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -70,7 +118,7 @@ class UserLocationService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def SendLocation(request,
+    def MakeOrder(request,
             target,
             options=(),
             channel_credentials=None,
@@ -83,9 +131,90 @@ class UserLocationService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/userLocation.UserLocationService/SendLocation',
-            user__location__pb2.UserRequest.SerializeToString,
-            user__location__pb2.LocationResponse.FromString,
+            '/userLocation.UserLocationService/MakeOrder',
+            user__location__pb2.OrderRequest.SerializeToString,
+            user__location__pb2.OrderResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AcceptOrder(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/userLocation.UserLocationService/AcceptOrder',
+            user__location__pb2.AcceptOrderRequest.SerializeToString,
+            user__location__pb2.AcceptOrderResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def FinishOrder(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/userLocation.UserLocationService/FinishOrder',
+            user__location__pb2.FinishOrderRequest.SerializeToString,
+            user__location__pb2.FinishOrderResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PaymentCheck(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/userLocation.UserLocationService/PaymentCheck',
+            user__location__pb2.PaymentCheckRequest.SerializeToString,
+            user__location__pb2.PaymentCheckResponse.FromString,
             options,
             channel_credentials,
             insecure,

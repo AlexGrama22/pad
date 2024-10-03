@@ -3,15 +3,56 @@ syntax = "proto3";
 package userLocation;
 
 service UserLocationService {
-  rpc SendLocation (UserRequest) returns (LocationResponse) {}
+  rpc MakeOrder (OrderRequest) returns (OrderResponse);
+  rpc AcceptOrder (AcceptOrderRequest) returns (AcceptOrderResponse);
+  rpc FinishOrder (FinishOrderRequest) returns (FinishOrderResponse);
+  rpc PaymentCheck (PaymentCheckRequest) returns (PaymentCheckResponse);
 }
 
-message UserRequest {
+message OrderRequest {
   string userId = 1;
+  float startLongitude = 2;
+  float startLatitude = 3;
+  float endLongitude = 4;
+  float endLatitude = 5;
 }
 
-message LocationResponse {
-  string userId = 1;
-  float latitude = 2;
-  float longitude = 3;
+message OrderResponse {
+  string orderId = 1;
+  float estimatedPrice = 2;
+}
+
+message AcceptOrderRequest {
+  string orderId = 1;
+  string driverId = 2;
+  float startLongitude = 3;
+  float startLatitude = 4;
+  float endLongitude = 5;
+  float endLatitude = 6;
+}
+
+message AcceptOrderResponse {
+  string rideId = 1;
+  float startLongitude = 2;
+  float startLatitude = 3;
+  float endLongitude = 4;
+  float endLatitude = 5;
+  float estimatedPrice = 6;
+}
+
+message FinishOrderRequest {
+  string rideId = 1;
+  float realPrice = 2;
+}
+
+message FinishOrderResponse {
+  string paymentStatus = 1;
+}
+
+message PaymentCheckRequest {
+  string rideId = 1;
+}
+
+message PaymentCheckResponse {
+  string status = 1;
 }

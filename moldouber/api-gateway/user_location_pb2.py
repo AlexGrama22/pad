@@ -24,17 +24,29 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13user_location.proto\x12\x0cuserLocation\"\x1d\n\x0bUserRequest\x12\x0e\n\x06userId\x18\x01 \x01(\t\"G\n\x10LocationResponse\x12\x0e\n\x06userId\x18\x01 \x01(\t\x12\x10\n\x08latitude\x18\x02 \x01(\x02\x12\x11\n\tlongitude\x18\x03 \x01(\x02\x32\x62\n\x13UserLocationService\x12K\n\x0cSendLocation\x12\x19.userLocation.UserRequest\x1a\x1e.userLocation.LocationResponse\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13user_location.proto\x12\x0cuserLocation\"x\n\x0cOrderRequest\x12\x0e\n\x06userId\x18\x01 \x01(\t\x12\x16\n\x0estartLongitude\x18\x02 \x01(\x02\x12\x15\n\rstartLatitude\x18\x03 \x01(\x02\x12\x14\n\x0c\x65ndLongitude\x18\x04 \x01(\x02\x12\x13\n\x0b\x65ndLatitude\x18\x05 \x01(\x02\"8\n\rOrderResponse\x12\x0f\n\x07orderId\x18\x01 \x01(\t\x12\x16\n\x0e\x65stimatedPrice\x18\x02 \x01(\x02\"\x91\x01\n\x12\x41\x63\x63\x65ptOrderRequest\x12\x0f\n\x07orderId\x18\x01 \x01(\t\x12\x10\n\x08\x64riverId\x18\x02 \x01(\t\x12\x16\n\x0estartLongitude\x18\x03 \x01(\x02\x12\x15\n\rstartLatitude\x18\x04 \x01(\x02\x12\x14\n\x0c\x65ndLongitude\x18\x05 \x01(\x02\x12\x13\n\x0b\x65ndLatitude\x18\x06 \x01(\x02\"\x97\x01\n\x13\x41\x63\x63\x65ptOrderResponse\x12\x0e\n\x06rideId\x18\x01 \x01(\t\x12\x16\n\x0estartLongitude\x18\x02 \x01(\x02\x12\x15\n\rstartLatitude\x18\x03 \x01(\x02\x12\x14\n\x0c\x65ndLongitude\x18\x04 \x01(\x02\x12\x13\n\x0b\x65ndLatitude\x18\x05 \x01(\x02\x12\x16\n\x0e\x65stimatedPrice\x18\x06 \x01(\x02\"7\n\x12\x46inishOrderRequest\x12\x0e\n\x06rideId\x18\x01 \x01(\t\x12\x11\n\trealPrice\x18\x02 \x01(\x02\",\n\x13\x46inishOrderResponse\x12\x15\n\rpaymentStatus\x18\x01 \x01(\t\"%\n\x13PaymentCheckRequest\x12\x0e\n\x06rideId\x18\x01 \x01(\t\"&\n\x14PaymentCheckResponse\x12\x0e\n\x06status\x18\x01 \x01(\t2\xda\x02\n\x13UserLocationService\x12\x44\n\tMakeOrder\x12\x1a.userLocation.OrderRequest\x1a\x1b.userLocation.OrderResponse\x12R\n\x0b\x41\x63\x63\x65ptOrder\x12 .userLocation.AcceptOrderRequest\x1a!.userLocation.AcceptOrderResponse\x12R\n\x0b\x46inishOrder\x12 .userLocation.FinishOrderRequest\x1a!.userLocation.FinishOrderResponse\x12U\n\x0cPaymentCheck\x12!.userLocation.PaymentCheckRequest\x1a\".userLocation.PaymentCheckResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'user_location_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_USERREQUEST']._serialized_start=37
-  _globals['_USERREQUEST']._serialized_end=66
-  _globals['_LOCATIONRESPONSE']._serialized_start=68
-  _globals['_LOCATIONRESPONSE']._serialized_end=139
-  _globals['_USERLOCATIONSERVICE']._serialized_start=141
-  _globals['_USERLOCATIONSERVICE']._serialized_end=239
+  _globals['_ORDERREQUEST']._serialized_start=37
+  _globals['_ORDERREQUEST']._serialized_end=157
+  _globals['_ORDERRESPONSE']._serialized_start=159
+  _globals['_ORDERRESPONSE']._serialized_end=215
+  _globals['_ACCEPTORDERREQUEST']._serialized_start=218
+  _globals['_ACCEPTORDERREQUEST']._serialized_end=363
+  _globals['_ACCEPTORDERRESPONSE']._serialized_start=366
+  _globals['_ACCEPTORDERRESPONSE']._serialized_end=517
+  _globals['_FINISHORDERREQUEST']._serialized_start=519
+  _globals['_FINISHORDERREQUEST']._serialized_end=574
+  _globals['_FINISHORDERRESPONSE']._serialized_start=576
+  _globals['_FINISHORDERRESPONSE']._serialized_end=620
+  _globals['_PAYMENTCHECKREQUEST']._serialized_start=622
+  _globals['_PAYMENTCHECKREQUEST']._serialized_end=659
+  _globals['_PAYMENTCHECKRESPONSE']._serialized_start=661
+  _globals['_PAYMENTCHECKRESPONSE']._serialized_end=699
+  _globals['_USERLOCATIONSERVICE']._serialized_start=702
+  _globals['_USERLOCATIONSERVICE']._serialized_end=1048
 # @@protoc_insertion_point(module_scope)

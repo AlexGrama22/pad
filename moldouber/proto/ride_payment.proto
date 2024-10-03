@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package RidePaymentService;
+
+service RidePaymentService {
+  rpc PayRide (PaymentRequest) returns (PaymentResponse);
+  rpc ProcessPayment (ProcessPaymentRequest) returns (ProcessPaymentResponse);
+}
+
+message PaymentRequest {
+  string rideId = 1;
+  float amount = 2;
+  string userId = 3;
+}
+
+message PaymentResponse {
+  string rideId = 1;
+  string status = 2;
+}
+
+message ProcessPaymentRequest {
+  string rideId = 1;
+}
+
+message ProcessPaymentResponse {
+  string rideId = 1;
+  string status = 2;
+}

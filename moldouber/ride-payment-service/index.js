@@ -1,58 +1,55 @@
 const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
-const PROTO_PATH = './ride_payment.proto';
 const express = require('express');
+const { v4: uuidv4 } = require('uuid');
 const app = express();
-const USER_LOCATION_PROTO = '/usr/src/proto/user_location.proto';
+
+const PROTO_PATH = '/usr/src/proto/ride_payment.proto';
 const packageDefinition = protoLoader.loadSync(PROTO_PATH);
-const userLocationDefinition = protoLoader.loadSync(USER_LOCATION_PROTO);
-
 const ridePaymentProto = grpc.loadPackageDefinition(packageDefinition).RidePaymentService;
-const userLocationProto = grpc.loadPackageDefinition(userLocationDefinition).userLocation;
 
-const server = new grpc.Server();
+// Mock Payment Status
+const paymentStatus = {};
 
-// Mock payment processing function
-function processPayment(call, callback) {
-    const { rideId, amount, userId } = call.request;
+// PayRide method
+async function payRide(call, callback) {
+  const { rideId, amount, userId } = call.request;
 
-    const deadline = new Date();
-    deadline.setSeconds(deadline.getSeconds() + 5); // 5-second timeout
+  paymentStatus[rideId] = 'orderPaid';  // Mark as paid for now
 
-    // Call the User Location Service to get the user's location
-    const client = new userLocationProto.UserLocationService(
-        process.env.USER_LOCATION_HOST + ':' + process.env.USER_LOCATION_PORT,
-        grpc.credentials.createInsecure()
-    );
-
-    client.SendLocation({ userId }, { deadline: deadline }, (error, locationResponse) => {        if (error) {
-            callback(error);
-        } else {
-            // Process payment logic here (e.g., interacting with a payment gateway)
-            const status = 'Payment Processed';
-            callback(null, {
-                status,
-                userId,
-                latitude: locationResponse.latitude,
-                longitude: locationResponse.longitude,
-            });
-        }
-    });
+  callback(null, { rideId, status: 'orderPaid' });
 }
 
-server.addService(ridePaymentProto.service, { ProcessPayment: processPayment });
+// ProcessPayment method
+async function processPayment(call, callback) {
+  const { rideId } = call.request;
+
+  const status = paymentStatus[rideId] || 'notPaid';
+
+  callback(null, { rideId, status });
+
+  // setTimeout(() => {
+  //   callback(null, { rideId, status });
+  // }, 11000); // 11-second delay
+}
+
+// gRPC server setup
+const server = new grpc.Server();
+server.addService(ridePaymentProto.RidePaymentService.service, { 
+  PayRide: payRide,
+  ProcessPayment: processPayment
+});
 
 server.bindAsync('0.0.0.0:50052', grpc.ServerCredentials.createInsecure(), () => {
     console.log('Ride Payment Service is running on port 50052');
     server.start();
 });
 
-
 app.get('/status', (req, res) => {
-  res.status(200).json({ status: 'Ride Payment Service is running' });
+    res.status(200).json({ status: 'Ride Payment Service is running' });
 });
 
-// Start Express Server
+// Start the status server
 app.listen(4000, () => {
   console.log('Ride Payment Service Status Endpoint is running on port 4000');
 });

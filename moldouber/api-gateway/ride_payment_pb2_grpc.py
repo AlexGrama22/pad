@@ -34,15 +34,26 @@ class RidePaymentServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.ProcessPayment = channel.unary_unary(
-                '/RidePaymentService/ProcessPayment',
+        self.PayRide = channel.unary_unary(
+                '/RidePaymentService.RidePaymentService/PayRide',
                 request_serializer=ride__payment__pb2.PaymentRequest.SerializeToString,
                 response_deserializer=ride__payment__pb2.PaymentResponse.FromString,
+                _registered_method=True)
+        self.ProcessPayment = channel.unary_unary(
+                '/RidePaymentService.RidePaymentService/ProcessPayment',
+                request_serializer=ride__payment__pb2.ProcessPaymentRequest.SerializeToString,
+                response_deserializer=ride__payment__pb2.ProcessPaymentResponse.FromString,
                 _registered_method=True)
 
 
 class RidePaymentServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
+
+    def PayRide(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
 
     def ProcessPayment(self, request, context):
         """Missing associated documentation comment in .proto file."""
@@ -53,21 +64,53 @@ class RidePaymentServiceServicer(object):
 
 def add_RidePaymentServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'ProcessPayment': grpc.unary_unary_rpc_method_handler(
-                    servicer.ProcessPayment,
+            'PayRide': grpc.unary_unary_rpc_method_handler(
+                    servicer.PayRide,
                     request_deserializer=ride__payment__pb2.PaymentRequest.FromString,
                     response_serializer=ride__payment__pb2.PaymentResponse.SerializeToString,
             ),
+            'ProcessPayment': grpc.unary_unary_rpc_method_handler(
+                    servicer.ProcessPayment,
+                    request_deserializer=ride__payment__pb2.ProcessPaymentRequest.FromString,
+                    response_serializer=ride__payment__pb2.ProcessPaymentResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'RidePaymentService', rpc_method_handlers)
+            'RidePaymentService.RidePaymentService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('RidePaymentService', rpc_method_handlers)
+    server.add_registered_method_handlers('RidePaymentService.RidePaymentService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
 class RidePaymentService(object):
     """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def PayRide(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/RidePaymentService.RidePaymentService/PayRide',
+            ride__payment__pb2.PaymentRequest.SerializeToString,
+            ride__payment__pb2.PaymentResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
 
     @staticmethod
     def ProcessPayment(request,
@@ -83,9 +126,9 @@ class RidePaymentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/RidePaymentService/ProcessPayment',
-            ride__payment__pb2.PaymentRequest.SerializeToString,
-            ride__payment__pb2.PaymentResponse.FromString,
+            '/RidePaymentService.RidePaymentService/ProcessPayment',
+            ride__payment__pb2.ProcessPaymentRequest.SerializeToString,
+            ride__payment__pb2.ProcessPaymentResponse.FromString,
             options,
             channel_credentials,
             insecure,

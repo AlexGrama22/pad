@@ -61,62 +61,87 @@
 ```
 ## User Management & Delivery Service
 
-**POST /api/users/register**
+**POST /api/user/make_order**
 
 ```json
+
 {
-  "name": "Ion Popescu",
-  "email": "[ion.popescu@gmail.com",
-  "password": "securepassword123",
-  "phone_number": "+373 69 123 456" 
+  "userId": "3",
+  "startLongitude": 22,
+  "startLatitude": 22,
+  "endLongitude": 22,
+  "endLatitude": 22
 }
+
+
 
 ```
 
 
-**POST /api/drivers/location**
+**POST /api/user/accept_order**
 
 ```json
 {
-  "driver_id": "98765",
-  "latitude": 47.010312, 
-  "longitude": 28.843458 
+  "orderId": "1a9f3fb0-6ca8-4c17-bf84-06853932e9ea",
+  "driverId": "33"
+}
+
+```
+
+**POST finish_order**
+
+```json
+{
+  "rideId": "7610b0df-f0ca-4009-a832-af507c2d507e",
+  "realPrice": 30.00
 }
 
 ```
 ## Ride Matching & Payment Service
 
-
-**POST /api/rides/request**
+**POST /api/ride/pay**
 
 ```json
 {
-  "rider_id": "12345",
-  "origin_latitude": 46.989223, 
-  "origin_longitude": 28.851459, 
-  "destination_latitude": 47.024099, 
-  "destination_longitude": 28.830384 
+  "rideId": "7610b0df-f0ca-4009-a832-af507c2d507e",
+  "amount": 150.25,
+  "userId": "3"
 }
+
 ```
 
-**POST /api/notifications/send**
+**POST /api/ride/process_payment**
 
 ```json
 {
-  "user_id": "12345", 
-  "message": "Your ride is arriving in 5 minutes!"
+  "rideId": "b51174f2-5a95-4dae-a85f-ad5629921385"
 }
+
+
 ```
 
-**POST /api/payments/process**
+## Database and Redis Access
 
-```json
-{
-  "ride_id": "54321",
-  "amount": 15.75, 
-  "payment_method": "card",
-  "card_details": { 1234 4567 8900 1234 } 
-}
+### Accessing PostgreSQL (User Management & Delivery Service)
+To check the data in PostgreSQL:
+```bash
+docker exec -it <container_name> psql -U <postgres_user> -d <postgres_db>
+```
+Replace `<container_name>`, `<postgres_user>`, and `<postgres_db>` with the appropriate values.
+
+### Accessing MongoDB (Ride Payment Service)
+To check payment data in MongoDB:
+```bash
+docker exec -it <container_name> mongo
+use ridepaymentdb
+db.payments.find().pretty()
+```
+
+### Accessing Redis (User Management & Delivery Service)
+To check cached data in Redis:
+```bash
+docker exec -it <container_name> redis-cli
+keys *
 ```
 
 ## Deployment and Scaling

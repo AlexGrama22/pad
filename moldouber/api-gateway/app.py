@@ -190,6 +190,50 @@ def process_payment():
         else:
             return jsonify({"error": e.details()}), e.code().value
 
+# Endpoint to check payment status
+@app.route('/api/user/check_payment_status', methods=['POST'])
+def check_payment_status():
+    data = request.json
+    ride_id = data.get('rideId')
+
+    if not ride_id:
+        return jsonify({"error": "Missing required fields"}), 400
+
+    stub = get_user_location_stub()
+
+    payment_check_request = user_location_pb2.PaymentCheckRequest(
+        rideId=ride_id
+    )
+
+    try:
+        # Add a 10-second timeout to the gRPC call
+        response = stub.PaymentCheck(payment_check_request, timeout=10.0)
+
+        # If the status is "notPaid", return "orderNotPaid"
+        if response.status == "notPaid":
+            return jsonify({
+                'rideId': ride_id,
+                'status': 'orderNotPaid'
+            })
+        else:
+            return jsonify({
+                'rideId': ride_id,
+                'status': response.status
+            })
+
+    except grpc.RpcError as e:
+        # Handle NOT_FOUND error (status code 5) properly
+        if e.code() == grpc.StatusCode.NOT_FOUND:
+            return jsonify({
+                'rideId': ride_id,
+                'status': 'orderNotPaid'
+            }), 200
+        elif e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+            return jsonify({"error": "Request timed out"}), 408
+        else:
+            return jsonify({"error": e.details()}), e.code().value
+
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

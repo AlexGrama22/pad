@@ -3,6 +3,7 @@ const protoLoader = require('@grpc/proto-loader');
 const { MongoClient } = require('mongodb');
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
+const async = require('async'); // Import async for concurrency control
 const app = express();
 
 const PROTO_PATH = '/usr/src/proto/ride_payment.proto';
@@ -20,31 +21,40 @@ mongoClient.connect().then((client) => {
   console.log('Connected to MongoDB');
 });
 
+// Task queue with concurrency limit of 6
+const taskQueue = async.queue(async (task) => {
+  return task();
+}, 6);  // Limit concurrency to 6
+
 // PayRide method
 async function payRide(call, callback) {
-  const { rideId, amount, userId } = call.request;
+  taskQueue.push(async () => {
+    const { rideId, amount, userId } = call.request;
 
-  // Store payment info in MongoDB
-  await paymentsCollection.insertOne({ rideId, amount, userId, status: 'orderPaid' });
+    // Store payment info in MongoDB
+    await paymentsCollection.insertOne({ rideId, amount, userId, status: 'orderPaid' });
 
-  callback(null, { rideId, status: 'orderPaid' });
+    callback(null, { rideId, status: 'orderPaid' });
+  });
 }
 
 // ProcessPayment method
 async function processPayment(call, callback) {
-  const { rideId } = call.request;
+  taskQueue.push(async () => {
+    const { rideId } = call.request;
 
-  const payment = await paymentsCollection.findOne({ rideId });
+    const payment = await paymentsCollection.findOne({ rideId });
 
-  if (!payment) {
-    callback({
-      code: grpc.status.NOT_FOUND,
-      message: 'Payment not found'
-    });
-    return;
-  }
+    if (!payment) {
+      callback({
+        code: grpc.status.NOT_FOUND,
+        message: 'Payment not found'
+      });
+      return;
+    }
 
-  callback(null, { rideId, status: payment.status });
+    callback(null, { rideId, status: payment.status });
+  });
 }
 
 // gRPC server setup

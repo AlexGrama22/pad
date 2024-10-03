@@ -4,6 +4,7 @@ const { Pool } = require('pg'); // PostgreSQL client
 const redis = require('redis');
 const { v4: uuidv4 } = require('uuid');  // For generating IDs
 const express = require('express');
+const async = require('async'); // Import async for concurrency control
 const app = express();
 
 const PROTO_PATH = '/usr/src/proto/user_location.proto';
@@ -31,6 +32,11 @@ const redisClient = redis.createClient({
 });
 redisClient.connect(); // Connect Redis client
 
+// Task queue with concurrency limit of 6
+const taskQueue = async.queue(async (task) => {
+  return task();
+}, 6);  // Limit concurrency to 6
+
 // Mock function to calculate estimated price
 function calculateEstimatedPrice(startLatitude, startLongitude, endLatitude, endLongitude) {
   return Math.random() * 100;  // Random estimated price
@@ -38,103 +44,111 @@ function calculateEstimatedPrice(startLatitude, startLongitude, endLatitude, end
 
 // MakeOrder method with Redis caching
 async function makeOrder(call, callback) {
-  const { userId, startLongitude, startLatitude, endLongitude, endLatitude } = call.request;
+  taskQueue.push(async () => {
+    const { userId, startLongitude, startLatitude, endLongitude, endLatitude } = call.request;
 
-  const orderId = uuidv4();  // Generate unique orderId
-  const estimatedPrice = calculateEstimatedPrice(startLatitude, startLongitude, endLatitude, endLongitude);
+    const orderId = uuidv4();  // Generate unique orderId
+    const estimatedPrice = calculateEstimatedPrice(startLatitude, startLongitude, endLatitude, endLongitude);
 
-  // Store the order in Redis cache
-  await redisClient.set(orderId, JSON.stringify({
-    userId, 
-    startLongitude, 
-    startLatitude, 
-    endLongitude, 
-    endLatitude, 
-    estimatedPrice
-  }), {
-    EX: 3600 // Set expiration for 1 hour
+    // Store the order in Redis cache
+    await redisClient.set(orderId, JSON.stringify({
+      userId, 
+      startLongitude, 
+      startLatitude, 
+      endLongitude, 
+      endLatitude, 
+      estimatedPrice
+    }), {
+      EX: 3600 // Set expiration for 1 hour
+    });
+
+    callback(null, { orderId, estimatedPrice });
   });
-
-  callback(null, { orderId, estimatedPrice });
 }
 
 // AcceptOrder method with PostgreSQL insert
 async function acceptOrder(call, callback) {
-  const { orderId, driverId } = call.request;
+  taskQueue.push(async () => {
+    const { orderId, driverId } = call.request;
 
-  // Retrieve the order details from Redis cache
-  const orderData = await redisClient.get(orderId);
-  
-  if (!orderData) {
-    callback({
-      code: grpc.status.NOT_FOUND,
-      message: 'Order not found'
+    // Retrieve the order details from Redis cache
+    const orderData = await redisClient.get(orderId);
+    
+    if (!orderData) {
+      callback({
+        code: grpc.status.NOT_FOUND,
+        message: 'Order not found'
+      });
+      return;
+    }
+
+    const order = JSON.parse(orderData);
+    const rideId = uuidv4();  // Generate unique rideId
+
+    // Store ride info in PostgreSQL
+    try {
+      await pool.query(
+        'INSERT INTO rides (userId, rideId, driverId) VALUES ($1, $2, $3)',
+        [order.userId, rideId, driverId]
+      );
+    } catch (err) {
+      console.error('Error saving to PostgreSQL:', err);
+      callback({
+        code: grpc.status.INTERNAL,
+        message: 'Error saving ride data'
+      });
+      return;
+    }
+
+    // Respond with the stored values
+    callback(null, { 
+      rideId, 
+      startLongitude: order.startLongitude, 
+      startLatitude: order.startLatitude, 
+      endLongitude: order.endLongitude, 
+      endLatitude: order.endLatitude, 
+      estimatedPrice: order.estimatedPrice 
     });
-    return;
-  }
-
-  const order = JSON.parse(orderData);
-  const rideId = uuidv4();  // Generate unique rideId
-
-  // Store ride info in PostgreSQL
-  try {
-    await pool.query(
-      'INSERT INTO rides (userId, rideId, driverId) VALUES ($1, $2, $3)',
-      [order.userId, rideId, driverId]
-    );
-  } catch (err) {
-    console.error('Error saving to PostgreSQL:', err);
-    callback({
-      code: grpc.status.INTERNAL,
-      message: 'Error saving ride data'
-    });
-    return;
-  }
-
-  // Respond with the stored values
-  callback(null, { 
-    rideId, 
-    startLongitude: order.startLongitude, 
-    startLatitude: order.startLatitude, 
-    endLongitude: order.endLongitude, 
-    endLatitude: order.endLatitude, 
-    estimatedPrice: order.estimatedPrice 
   });
 }
 
 // FinishOrder method
 async function finishOrder(call, callback) {
-  const { rideId, realPrice } = call.request;
+  taskQueue.push(async () => {
+    const { rideId, realPrice } = call.request;
 
-  const paymentStatus = 'notPaid';
+    const paymentStatus = 'notPaid';
 
-  callback(null, { paymentStatus });
+    callback(null, { paymentStatus });
+  });
 }
 
 // PaymentCheck method (communicating with RidePaymentService)
 async function paymentCheck(call, callback) {
-  const { rideId } = call.request;
+  taskQueue.push(async () => {
+    const { rideId } = call.request;
 
-  const ridePaymentClient = new ridePaymentProto.RidePaymentService(
-    'ride-payment-service:50052',  
-    grpc.credentials.createInsecure()
-  );
+    const ridePaymentClient = new ridePaymentProto.RidePaymentService(
+      'ride-payment-service:50052',  
+      grpc.credentials.createInsecure()
+    );
 
-  const paymentRequest = { rideId };
+    const paymentRequest = { rideId };
 
-  const deadline = new Date();
-  deadline.setSeconds(deadline.getSeconds() + 10);
+    const deadline = new Date();
+    deadline.setSeconds(deadline.getSeconds() + 10);
 
-  ridePaymentClient.ProcessPayment(paymentRequest, { deadline }, (error, response) => {
-    if (error) {
-      console.error('Error communicating with RidePaymentService:', error);
-      callback({
-        code: grpc.status.INTERNAL,
-        message: 'Error fetching payment status'
-      });
-    } else {
-      callback(null, { status: response.status });
-    }
+    ridePaymentClient.ProcessPayment(paymentRequest, { deadline }, (error, response) => {
+      if (error) {
+        console.error('Error communicating with RidePaymentService:', error);
+        callback({
+          code: grpc.status.INTERNAL,
+          message: 'Error fetching payment status'
+        });
+      } else {
+        callback(null, { status: response.status });
+      }
+    });
   });
 }
 

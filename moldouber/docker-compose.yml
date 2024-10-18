@@ -24,6 +24,7 @@ services:
       - SERVICE_PORT=50052
     depends_on:
       - service-discovery
+      - user-location-service
     networks:
       - moldo-net
 
@@ -34,6 +35,7 @@ services:
     ports:
       - "50051:50051"
       - "4001:4001"    # Status endpoint
+      - "8080:8080"  
     depends_on:
       - postgres
       - service-discovery

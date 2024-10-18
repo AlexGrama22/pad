@@ -7,6 +7,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const async = require('async'); // Import async for concurrency control
 const axios = require('axios'); // Add axios for HTTP requests
+const WebSocket = require('ws'); // Add WebSocket library
 const app = express();
 
 const PROTO_PATH = '/usr/src/proto/ride_payment.proto';
@@ -121,4 +122,34 @@ app.get('/status', (req, res) => {
 // Start the status server
 app.listen(4000, () => {
   console.log('Ride Payment Service Status Endpoint is running on port 4000');
+});
+
+// WebSocket client to connect to user-location-service
+const ws = new WebSocket('ws://user-location-service:8080');
+
+ws.on('open', () => {
+  console.log('Connected to user-location-service via WebSocket');
+});
+
+ws.on('message', async (data) => {
+  const message = JSON.parse(data);
+  console.log('Received message via WebSocket:', message);
+
+  if (message.event === 'finish_order') {
+    const { rideId, realPrice, userId } = message.data;
+
+    // Automatically process payment
+    await paymentsCollection.insertOne({ rideId, amount: realPrice, userId, status: 'orderPaid' });
+    console.log(`Processed payment for rideId ${rideId}`);
+
+    // Optionally, you could send a confirmation back via WebSocket or gRPC
+  }
+});
+
+ws.on('close', () => {
+  console.log('WebSocket connection closed');
+});
+
+ws.on('error', (error) => {
+  console.error('WebSocket error:', error);
 });

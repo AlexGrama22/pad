@@ -8,6 +8,7 @@ const { v4: uuidv4 } = require('uuid');  // For generating IDs
 const express = require('express');
 const async = require('async'); // Import async for concurrency control
 const axios = require('axios'); // Add axios for HTTP requests
+const WebSocket = require('ws'); // Add WebSocket library
 const app = express();
 
 const PROTO_PATH = '/usr/src/proto/user_location.proto';
@@ -86,6 +87,32 @@ registerService();
 process.on('SIGINT', deregisterService);
 process.on('SIGTERM', deregisterService);
 
+// Initialize WebSocket Server
+const wss = new WebSocket.Server({ port: 8080 });
+console.log('WebSocket server is running on port 8080');
+
+let wsClients = [];
+
+// Handle WebSocket connections
+wss.on('connection', (ws) => {
+  console.log('A WebSocket client connected');
+  wsClients.push(ws);
+
+  ws.on('close', () => {
+    console.log('A WebSocket client disconnected');
+    wsClients = wsClients.filter(client => client !== ws);
+  });
+});
+
+// Broadcast function to send messages to all connected clients
+function broadcast(message) {
+  wsClients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(message));
+    }
+  });
+}
+
 // MakeOrder method with Redis caching
 async function makeOrder(call, callback) {
   taskQueue.push(async () => {
@@ -147,6 +174,7 @@ async function acceptOrder(call, callback) {
     // Respond with the stored values
     callback(null, { 
       rideId, 
+      userId: order.userId,
       startLongitude: order.startLongitude, 
       startLatitude: order.startLatitude, 
       endLongitude: order.endLongitude, 
@@ -163,14 +191,70 @@ async function finishOrder(call, callback) {
 
     const paymentStatus = 'notPaid';
 
-    callback(null, { paymentStatus });
+    // Retrieve userId from PostgreSQL
+    let userId;
+    try {
+      const res = await pool.query('SELECT userId FROM rides WHERE rideId = $1', [rideId]);
+      if (res.rows.length > 0) {
+        userId = res.rows[0].userid;
+      } else {
+        callback({
+          code: grpc.status.NOT_FOUND,
+          message: 'Ride not found'
+        });
+        return;
+      }
+    } catch (err) {
+      console.error('Error querying PostgreSQL:', err);
+      callback({
+        code: grpc.status.INTERNAL,
+        message: 'Error retrieving ride data'
+      });
+      return;
+    }
+
+    // Notify ride-payment-service via WebSocket
+    const message = {
+      event: 'finish_order',
+      data: {
+        rideId,
+        realPrice,
+        userId
+      }
+    };
+    broadcast(message);
+    console.log('Sent finish_order event via WebSocket:', message);
+
+    callback(null, { paymentStatus, userId });
   });
 }
 
-// PaymentCheck method (communicating with RidePaymentService)
+// PaymentCheck method (remains unchanged)
 async function paymentCheck(call, callback) {
   taskQueue.push(async () => {
     const { rideId } = call.request;
+
+    // Retrieve userId from PostgreSQL
+    let userId;
+    try {
+      const res = await pool.query('SELECT userId FROM rides WHERE rideId = $1', [rideId]);
+      if (res.rows.length > 0) {
+        userId = res.rows[0].userid;
+      } else {
+        callback({
+          code: grpc.status.NOT_FOUND,
+          message: 'Ride not found'
+        });
+        return;
+      }
+    } catch (err) {
+      console.error('Error querying PostgreSQL:', err);
+      callback({
+        code: grpc.status.INTERNAL,
+        message: 'Error retrieving ride data'
+      });
+      return;
+    }
 
     const ridePaymentClient = new ridePaymentProto.RidePaymentService(
       'ride-payment-service:50052',  // Use service name for discovery
@@ -190,7 +274,7 @@ async function paymentCheck(call, callback) {
           message: 'Error fetching payment status'
         });
       } else {
-        callback(null, { status: response.status });
+        callback(null, { status: response.status, userId });
       }
     });
   });

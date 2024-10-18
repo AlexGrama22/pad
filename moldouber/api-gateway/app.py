@@ -1,3 +1,5 @@
+# api-gateway/app.py
+
 from flask import Flask, request, jsonify
 import os
 import grpc
@@ -5,13 +7,31 @@ import ride_payment_pb2
 import ride_payment_pb2_grpc
 import user_location_pb2
 import user_location_pb2_grpc
+import requests
 
 app = Flask(__name__)
 
+# Service Discovery Configuration
+SERVICE_DISCOVERY_URL = os.getenv('SERVICE_DISCOVERY_URL', 'http://service-discovery:8500')
+
+def discover_service(service_name):
+    try:
+        response = requests.get(f"{SERVICE_DISCOVERY_URL}/services/{service_name}", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return data['address'], data['port']
+        else:
+            app.logger.error(f"Service {service_name} not found in Service Discovery")
+            return None, None
+    except Exception as e:
+        app.logger.error(f"Error discovering service {service_name}: {str(e)}")
+        return None, None
+
 # gRPC client setup for the RidePaymentService
 def get_ride_payment_stub():
-    ride_payment_host = os.getenv('RIDE_PAYMENT_HOST', 'localhost')
-    ride_payment_port = os.getenv('RIDE_PAYMENT_PORT', '50052')
+    ride_payment_host, ride_payment_port = discover_service('ride-payment-service')
+    if not ride_payment_host or not ride_payment_port:
+        raise Exception("Ride Payment Service not available")
     
     channel = grpc.insecure_channel(f"{ride_payment_host}:{ride_payment_port}")
     stub = ride_payment_pb2_grpc.RidePaymentServiceStub(channel)
@@ -19,8 +39,9 @@ def get_ride_payment_stub():
 
 # gRPC client setup for the UserLocationService
 def get_user_location_stub():
-    user_location_host = os.getenv('USER_LOCATION_HOST', 'localhost')
-    user_location_port = os.getenv('USER_LOCATION_PORT', '50051')
+    user_location_host, user_location_port = discover_service('user-location-service')
+    if not user_location_host or not user_location_port:
+        raise Exception("User Location Service not available")
     
     channel = grpc.insecure_channel(f"{user_location_host}:{user_location_port}")
     stub = user_location_pb2_grpc.UserLocationServiceStub(channel)
@@ -39,7 +60,10 @@ def make_order():
     if not all([user_id, start_long, start_lat, end_long, end_lat]):
         return jsonify({"error": "Missing required fields"}), 400
 
-    stub = get_user_location_stub()
+    try:
+        stub = get_user_location_stub()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 503
 
     order_request = user_location_pb2.OrderRequest(
         userId=user_id,
@@ -73,7 +97,10 @@ def accept_order():
     if not all([order_id, driver_id]):
         return jsonify({"error": "Missing required fields"}), 400
 
-    stub = get_user_location_stub()
+    try:
+        stub = get_user_location_stub()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 503
 
     accept_order_request = user_location_pb2.AcceptOrderRequest(
         orderId=order_id,
@@ -108,7 +135,10 @@ def finish_order():
     if not all([ride_id, real_price]):
         return jsonify({"error": "Missing required fields"}), 400
 
-    stub = get_user_location_stub()
+    try:
+        stub = get_user_location_stub()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 503
 
     finish_order_request = user_location_pb2.FinishOrderRequest(
         rideId=ride_id,
@@ -139,7 +169,10 @@ def pay_ride():
     if not all([ride_id, amount, user_id]):
         return jsonify({"error": "Missing required fields"}), 400
 
-    stub = get_ride_payment_stub()
+    try:
+        stub = get_ride_payment_stub()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 503
 
     pay_ride_request = ride_payment_pb2.PayRideRequest(
         rideId=ride_id,
@@ -170,7 +203,10 @@ def process_payment():
     if not ride_id:
         return jsonify({"error": "Missing required fields"}), 400
 
-    stub = get_ride_payment_stub()
+    try:
+        stub = get_ride_payment_stub()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 503
 
     process_payment_request = ride_payment_pb2.ProcessPaymentRequest(
         rideId=ride_id
@@ -199,7 +235,10 @@ def check_payment_status():
     if not ride_id:
         return jsonify({"error": "Missing required fields"}), 400
 
-    stub = get_user_location_stub()
+    try:
+        stub = get_user_location_stub()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 503
 
     payment_check_request = user_location_pb2.PaymentCheckRequest(
         rideId=ride_id
@@ -233,6 +272,9 @@ def check_payment_status():
         else:
             return jsonify({"error": e.details()}), e.code().value
 
+@app.route('/status', methods=['GET'])
+def status():
+    return jsonify({"status": "API Gateway is running"}), 200
 
 
 if __name__ == '__main__':

@@ -1,3 +1,5 @@
+// user-location-service/index.js
+
 const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
 const { Pool } = require('pg'); // PostgreSQL client
@@ -5,6 +7,7 @@ const redis = require('redis');
 const { v4: uuidv4 } = require('uuid');  // For generating IDs
 const express = require('express');
 const async = require('async'); // Import async for concurrency control
+const axios = require('axios'); // Add axios for HTTP requests
 const app = express();
 
 const PROTO_PATH = '/usr/src/proto/user_location.proto';
@@ -41,6 +44,47 @@ const taskQueue = async.queue(async (task) => {
 function calculateEstimatedPrice(startLatitude, startLongitude, endLatitude, endLongitude) {
   return Math.random() * 100;  // Random estimated price
 }
+
+// Service Discovery Configuration
+const SERVICE_DISCOVERY_URL = process.env.SERVICE_DISCOVERY_URL || 'http://service-discovery:8500/register';
+const SERVICE_NAME = process.env.SERVICE_NAME || 'user-location-service';
+const SERVICE_ADDRESS = process.env.SERVICE_ADDRESS || 'user-location-service';
+const SERVICE_PORT = process.env.SERVICE_PORT || 50051;
+
+// Function to register the service
+async function registerService() {
+    try {
+        await axios.post('http://service-discovery:8500/register', {
+            service_name: SERVICE_NAME,
+            service_address: SERVICE_ADDRESS,
+            service_port: SERVICE_PORT
+        });
+        console.log(`${SERVICE_NAME} registered with Service Discovery`);
+    } catch (error) {
+        console.error('Error registering service:', error.message);
+    }
+}
+
+// Function to deregister the service
+async function deregisterService() {
+    try {
+        await axios.post('http://service-discovery:8500/deregister', {
+            service_name: SERVICE_NAME,
+            service_address: SERVICE_ADDRESS,
+            service_port: SERVICE_PORT
+        });
+        console.log(`${SERVICE_NAME} deregistered from Service Discovery`);
+    } catch (error) {
+        console.error('Error deregistering service:', error.message);
+    }
+}
+
+// Register service on startup
+registerService();
+
+// Handle graceful shutdown
+process.on('SIGINT', deregisterService);
+process.on('SIGTERM', deregisterService);
 
 // MakeOrder method with Redis caching
 async function makeOrder(call, callback) {
@@ -129,7 +173,7 @@ async function paymentCheck(call, callback) {
     const { rideId } = call.request;
 
     const ridePaymentClient = new ridePaymentProto.RidePaymentService(
-      'ride-payment-service:50052',  
+      'ride-payment-service:50052',  // Use service name for discovery
       grpc.credentials.createInsecure()
     );
 

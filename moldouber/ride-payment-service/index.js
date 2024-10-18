@@ -1,9 +1,12 @@
+// ride-payment-service/index.js
+
 const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
 const { MongoClient } = require('mongodb');
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const async = require('async'); // Import async for concurrency control
+const axios = require('axios'); // Add axios for HTTP requests
 const app = express();
 
 const PROTO_PATH = '/usr/src/proto/ride_payment.proto';
@@ -25,6 +28,47 @@ mongoClient.connect().then((client) => {
 const taskQueue = async.queue(async (task) => {
   return task();
 }, 6);  // Limit concurrency to 6
+
+// Service Discovery Configuration
+const SERVICE_DISCOVERY_URL = process.env.SERVICE_DISCOVERY_URL || 'http://service-discovery:8500/register';
+const SERVICE_NAME = process.env.SERVICE_NAME || 'ride-payment-service';
+const SERVICE_ADDRESS = process.env.SERVICE_ADDRESS || 'ride-payment-service';
+const SERVICE_PORT = process.env.SERVICE_PORT || 50052;
+
+// Function to register the service
+async function registerService() {
+    try {
+        await axios.post('http://service-discovery:8500/register', {
+            service_name: SERVICE_NAME,
+            service_address: SERVICE_ADDRESS,
+            service_port: SERVICE_PORT
+        });
+        console.log(`${SERVICE_NAME} registered with Service Discovery`);
+    } catch (error) {
+        console.error('Error registering service:', error.message);
+    }
+}
+
+// Function to deregister the service
+async function deregisterService() {
+    try {
+        await axios.post('http://service-discovery:8500/deregister', {
+            service_name: SERVICE_NAME,
+            service_address: SERVICE_ADDRESS,
+            service_port: SERVICE_PORT
+        });
+        console.log(`${SERVICE_NAME} deregistered from Service Discovery`);
+    } catch (error) {
+        console.error('Error deregistering service:', error.message);
+    }
+}
+
+// Register service on startup
+registerService();
+
+// Handle graceful shutdown
+process.on('SIGINT', deregisterService);
+process.on('SIGTERM', deregisterService);
 
 // PayRide method
 async function payRide(call, callback) {
@@ -69,10 +113,12 @@ server.bindAsync('0.0.0.0:50052', grpc.ServerCredentials.createInsecure(), () =>
     server.start();
 });
 
+// Express app for status
 app.get('/status', (req, res) => {
     res.status(200).json({ status: 'Ride Payment Service is running' });
 });
 
+// Start the status server
 app.listen(4000, () => {
   console.log('Ride Payment Service Status Endpoint is running on port 4000');
 });

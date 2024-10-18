@@ -7,11 +7,9 @@ services:
     depends_on:
       - user-location-service
       - ride-payment-service
+      - service-discovery
     environment:
-          - RIDE_PAYMENT_HOST=ride-payment-service
-          - RIDE_PAYMENT_PORT=50052
-          - USER_LOCATION_HOST=user-location-service
-          - USER_LOCATION_PORT=50051
+      - SERVICE_DISCOVERY_URL=http://service-discovery:8500
     networks:
       - moldo-net
 
@@ -19,30 +17,41 @@ services:
     build: ./ride-payment-service
     volumes:
       - ./proto:/usr/src/proto  
-    ports:
-      - "50052:50052"
-      - "4000:4000"    # Status endpoint
     environment:
-      - USER_LOCATION_HOST=user-location-service
-      - USER_LOCATION_PORT=50051
+      - SERVICE_DISCOVERY_URL=http://service-discovery:8500
+      - SERVICE_NAME=ride-payment-service
+      - SERVICE_ADDRESS=ride-payment-service
+      - SERVICE_PORT=50052
+    depends_on:
+      - service-discovery
     networks:
       - moldo-net
 
   user-location-service:
     build: ./user-location-service
-
     volumes:
       - ./proto:/usr/src/proto
-    
     ports:
       - "50051:50051"
       - "4001:4001"    # Status endpoint
     depends_on:
       - postgres
+      - service-discovery
     environment:
       - POSTGRES_USER=myuser
       - POSTGRES_PASSWORD=mypassword
       - POSTGRES_DB=userlocationdb
+      - SERVICE_DISCOVERY_URL=http://service-discovery:8500
+      - SERVICE_NAME=user-location-service
+      - SERVICE_ADDRESS=user-location-service
+      - SERVICE_PORT=50051
+    networks:
+      - moldo-net
+
+  service-discovery:
+    build: ./service-discovery
+    ports:
+      - "8500:8500"
     networks:
       - moldo-net
 
@@ -75,10 +84,10 @@ services:
     networks:
       - moldo-net
 
+networks:
+  moldo-net:
+
 volumes:
   pgdata:
   mongodata:
   proto:
-
-networks:
-  moldo-net:

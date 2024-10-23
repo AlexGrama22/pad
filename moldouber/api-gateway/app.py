@@ -75,7 +75,7 @@ def make_order():
 
     try:
         # Add a 10-second timeout to the gRPC call
-        response = stub.MakeOrder(order_request, timeout=10.0)
+        response = stub.MakeOrder(order_request, timeout=10.001)
         return jsonify({
             'orderId': response.orderId,
             'estimatedPrice': response.estimatedPrice

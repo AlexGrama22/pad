@@ -142,7 +142,6 @@ ws.on('message', async (data) => {
     await paymentsCollection.insertOne({ rideId, amount: realPrice, userId, status: 'orderPaid' });
     console.log(`Processed payment for rideId ${rideId}`);
 
-    // Optionally, you could send a confirmation back via WebSocket or gRPC
   }
 });
 

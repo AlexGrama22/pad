@@ -25,6 +25,8 @@ services:
     depends_on:
       - service-discovery
       - user-location-service
+    ports:
+      - "4000:4000"
     networks:
       - moldo-net
 

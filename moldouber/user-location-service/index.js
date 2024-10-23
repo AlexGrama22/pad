@@ -10,6 +10,7 @@ const async = require('async'); // Import async for concurrency control
 const axios = require('axios'); // Add axios for HTTP requests
 const WebSocket = require('ws'); // Add WebSocket library
 const app = express();
+const rooms = {};
 
 const PROTO_PATH = '/usr/src/proto/user_location.proto';
 const RIDE_PAYMENT_PROTO_PATH = '/usr/src/proto/ride_payment.proto';
@@ -39,7 +40,7 @@ redisClient.connect(); // Connect Redis client
 // Task queue with concurrency limit of 6
 const taskQueue = async.queue(async (task) => {
   return task();
-}, 6);  // Limit concurrency to 6
+}, 2);  // Limit concurrency to 6
 
 // Mock function to calculate estimated price
 function calculateEstimatedPrice(startLatitude, startLongitude, endLatitude, endLongitude) {
@@ -96,11 +97,48 @@ let wsClients = [];
 // Handle WebSocket connections
 wss.on('connection', (ws) => {
   console.log('A WebSocket client connected');
-  wsClients.push(ws);
+
+  ws.on('message', (data) => {
+    try {
+      const message = JSON.parse(data);
+      const { type, orderId, userId, driverId, content } = message;
+
+      switch (type) {
+        case 'join_room':
+          if (!rooms[orderId]) {
+            rooms[orderId] = []; // Create a new room if it doesn't exist
+          }
+          rooms[orderId].push(ws); // Add client to the room
+          console.log(`Client joined room: ${orderId}`);
+          break;
+
+        case 'send_message':
+          if (rooms[orderId]) {
+            rooms[orderId].forEach((client) => {
+              if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({ userId, driverId, content }));
+              }
+            });
+          }
+          break;
+
+        default:
+          console.error('Unknown message type:', type);
+      }
+    } catch (err) {
+      console.error('Error processing message:', err);
+    }
+  });
 
   ws.on('close', () => {
     console.log('A WebSocket client disconnected');
-    wsClients = wsClients.filter(client => client !== ws);
+    // Remove the disconnected client from all rooms
+    for (const [roomId, clients] of Object.entries(rooms)) {
+      rooms[roomId] = clients.filter((client) => client !== ws);
+      if (rooms[roomId].length === 0) {
+        delete rooms[roomId]; // Remove empty rooms
+      }
+    }
   });
 });
 
@@ -113,6 +151,16 @@ function broadcast(message) {
   });
 }
 
+function broadcastToRoom(orderId, message) {
+  if (rooms[orderId]) {
+    rooms[orderId].forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify(message));
+      }
+    });
+  }
+}
+
 // MakeOrder method with Redis caching
 async function makeOrder(call, callback) {
   taskQueue.push(async () => {
@@ -120,6 +168,7 @@ async function makeOrder(call, callback) {
 
     const orderId = uuidv4();  // Generate unique orderId
     const estimatedPrice = calculateEstimatedPrice(startLatitude, startLongitude, endLatitude, endLongitude);
+    broadcastToRoom(orderId, { type: 'join_room', orderId, userId });
 
     // Store the order in Redis cache
     await redisClient.set(orderId, JSON.stringify({
@@ -144,6 +193,7 @@ async function acceptOrder(call, callback) {
 
     // Retrieve the order details from Redis cache
     const orderData = await redisClient.get(orderId);
+    broadcastToRoom(orderId, { type: 'join_room', orderId, driverId });
     
     if (!orderData) {
       callback({

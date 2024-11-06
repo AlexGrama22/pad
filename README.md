@@ -12,6 +12,7 @@
 
 ## Service Boundaries
 ![Scheme](./images/scheme.png)
+![Scheme](./images/scheme2.png)
 
 * **User Management & Location Tracking Service:** Handles user registration, authentication, profile management, and communication. Tracks the real-time location of drivers and riders during trips
 * **Ride Matching & Payment Service:**  Matches riders with available drivers based on proximity and other criteria. Handles payment processing for rides.

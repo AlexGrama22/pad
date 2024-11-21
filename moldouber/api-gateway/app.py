@@ -3,6 +3,7 @@
 from flask import Flask, request, jsonify
 import os
 import requests
+import pybreaker
 
 app = Flask(__name__)
 
@@ -10,17 +11,68 @@ app = Flask(__name__)
 NGINX_HOST = 'nginx'
 NGINX_PORT = 80
 
+
+def call_service_with_retry(endpoint, payload, service_type):
+    retries_per_instance = 2  # Retry 3 times per instance
+    total_instances = 2  # Number of total instances available
+    attempts = 0  # Total attempts counter
+    instance_index = 0  # Tracks the current instance being used
+
+    while attempts < retries_per_instance * total_instances:
+        try:
+            # Construct the service URL
+            url = f"http://{NGINX_HOST}:{NGINX_PORT}/{service_type}/{endpoint}"
+
+            # Make the request
+            response = requests.post(url, json=payload, timeout=30)
+
+            # Get the upstream container name or IP from the response headers
+            upstream_server = response.headers.get("X-Upstream-Server", f"Instance-{instance_index + 1}")
+
+            # Log the attempt
+            print(f"Attempt {attempts + 1} (Retry {attempts % retries_per_instance + 1}/{retries_per_instance} on {upstream_server}): Connecting to {url}")
+
+            # Raise an HTTPError for bad responses (4xx and 5xx)
+            response.raise_for_status()
+
+            # Log success and return response
+            print(f"Success: Connected to {upstream_server} and received response with status code {response.status_code}")
+            return response
+
+        except requests.exceptions.HTTPError as e:
+            # Increment attempts and handle retries
+            attempts += 1
+            print(f"HTTPError on Instance-{instance_index + 1}, attempt {attempts}: {e}")
+
+            # Check if retries on the current instance are exhausted
+            if attempts % retries_per_instance == 0:
+                # Switch to the next instance
+                instance_index = (instance_index + 1) % total_instances
+                print(f"Switching to the next instance: Instance-{instance_index + 1}")
+
+            print(f"Retrying on Instance-{instance_index + 1} (Attempt {attempts % retries_per_instance + 1}/{retries_per_instance})...")
+
+        except requests.exceptions.RequestException as e:
+            # Increment attempts and handle retries
+            attempts += 1
+            print(f"RequestException on Instance-{instance_index + 1}, attempt {attempts}: {e}")
+
+            # Check if retries on the current instance are exhausted
+            if attempts % retries_per_instance == 0:
+                # Switch to the next instance
+                instance_index = (instance_index + 1) % total_instances
+                print(f"Switching to the next instance: Instance-{instance_index + 1}")
+
+            print(f"Retrying on Instance-{instance_index + 1} (Attempt {attempts % retries_per_instance + 1}/{retries_per_instance})...")
+
+    # If all retries are exhausted
+    raise Exception("Max retries exceeded. All instances are unavailable.")
+
 def call_user_location_service(endpoint, payload):
-    url = f"http://{NGINX_HOST}:{NGINX_PORT}/user-location/{endpoint}"
-    response = requests.post(url, json=payload, timeout=10)
-    response.raise_for_status()
-    return response
+    return call_service_with_retry(endpoint, payload, "user-location")
 
 def call_ride_payment_service(endpoint, payload):
-    url = f"http://{NGINX_HOST}:{NGINX_PORT}/ride-payment/{endpoint}"
-    response = requests.post(url, json=payload, timeout=10)
-    response.raise_for_status()
-    return response
+    return call_service_with_retry(endpoint, payload, "ride-payment")
 
 # Endpoint to create an order
 @app.route('/api/user/make_order', methods=['POST'])

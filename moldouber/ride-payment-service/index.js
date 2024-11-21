@@ -1,14 +1,16 @@
+// ride-payment-service/index.js
+
 const express = require('express');
 const { MongoClient } = require('mongodb');
 const { v4: uuidv4 } = require('uuid');
 const async = require('async'); // For concurrency control
 const axios = require('axios'); // For HTTP requests
-const WebSocket = require('ws'); // Add WebSocket library
 const client = require('prom-client');
 const app = express();
 
 app.use(express.json());
 
+// Prometheus Metrics Setup
 const register = new client.Registry();
 
 // Collect default metrics
@@ -44,20 +46,29 @@ app.use((req, res, next) => {
 });
 
 // MongoDB client setup
-const mongoClient = new MongoClient('mongodb://mongo:27017', { useUnifiedTopology: true });
+const mongoClient = new MongoClient('mongodb://mongo:27017');
 
 let paymentsCollection;
 
-mongoClient.connect().then((client) => {
-  const db = client.db('ridepaymentdb');
-  paymentsCollection = db.collection('payments');
-  console.log('Connected to MongoDB');
-});
+mongoClient.connect()
+  .then((client) => {
+    const db = client.db('ridepaymentdb');
+    paymentsCollection = db.collection('payments');
+    console.log('Connected to MongoDB');
+  })
+  .catch(err => {
+    console.error('Failed to connect to MongoDB:', err);
+    process.exit(1); // Exit if MongoDB connection fails
+  });
 
-// Task queue with concurrency limit of 6
-const taskQueue = async.queue(async (task) => {
-  return task();
-}, 6);  // Limit concurrency to 6
+const taskQueue = async.queue(async (task, callback) => {
+  try {
+    await task();
+    callback();
+  } catch (err) {
+    callback(err);
+  }
+}, 6);
 
 // Service Discovery Configuration
 const SERVICE_DISCOVERY_URL = process.env.SERVICE_DISCOVERY_URL || 'http://service-discovery:8500';
@@ -67,30 +78,30 @@ const SERVICE_PORT = process.env.SERVICE_PORT || 5002;
 
 // Function to register the service
 async function registerService() {
-    try {
-        await axios.post(`${SERVICE_DISCOVERY_URL}/register`, {
-            service_name: SERVICE_NAME,
-            service_address: 'nginx',  // Register Nginx as the service address
-            service_port: '80'          // Nginx listens on port 80 inside the container
-        });
-        console.log(`${SERVICE_NAME} registered with Service Discovery`);
-    } catch (error) {
-        console.error('Error registering service:', error.message);
-    }
+  try {
+    await axios.post('http://service-discovery:8500/register', {
+      service_name: SERVICE_NAME,
+      service_address: 'nginx',  // Register Nginx as the service address
+      service_port: '80'          // Nginx listens on port 80 inside the container
+    });
+    console.log(`${SERVICE_NAME} registered with Service Discovery`);
+  } catch (error) {
+    console.error('Error registering service:', error.message);
+  }
 }
 
 // Function to deregister the service
 async function deregisterService() {
-    try {
-        await axios.post(`${SERVICE_DISCOVERY_URL}/deregister`, {
-            service_name: SERVICE_NAME,
-            service_address: 'nginx',
-            service_port: '80'
-        });
-        console.log(`${SERVICE_NAME} deregistered from Service Discovery`);
-    } catch (error) {
-        console.error('Error deregistering service:', error.message);
-    }
+  try {
+    await axios.post('http://service-discovery:8500/deregister', {
+      service_name: SERVICE_NAME,
+      service_address: 'nginx',
+      service_port: '80'
+    });
+    console.log(`${SERVICE_NAME} deregistered from Service Discovery`);
+  } catch (error) {
+    console.error('Error deregistering service:', error.message);
+  }
 }
 
 // Register service on startup
@@ -101,30 +112,56 @@ process.on('SIGINT', deregisterService);
 process.on('SIGTERM', deregisterService);
 
 // PayRide endpoint
-app.post('/pay_ride', (req, res) => {
-  taskQueue.push(async () => {
-    const { rideId, amount, userId } = req.body;
+app.post('/pay_ride', async (req, res) => {
+  const { rideId, amount, userId } = req.body;
 
-    if (!rideId || !amount || !userId) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
+  if (!rideId || !amount || !userId) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
 
-    // Store payment info in MongoDB
+  try {
     await paymentsCollection.insertOne({ rideId, amount, userId, status: 'orderPaid' });
-
     res.json({ rideId, status: 'orderPaid' });
-  });
+  } catch (err) {
+    console.error('Error processing payment:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
 });
 
 // ProcessPayment endpoint
-app.post('/process_payment', (req, res) => {
-  taskQueue.push(async () => {
-    const { rideId } = req.body;
+app.post('/process_payment', async (req, res) => {
+  const { rideId } = req.body;
 
-    if (!rideId) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
+  if (!rideId) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
 
+  try {
+    // Insert payment record with status 'Paid' and current timestamp
+    await paymentsCollection.insertOne({
+      rideId,
+      status: 'Paid',
+      timestamp: new Date()
+    });
+
+    console.log(`Payment processed for rideId ${rideId}: paymentStatus: Paid`);
+
+    res.json({ paymentStatus: 'Paid' });
+  } catch (err) {
+    console.error('Error processing payment:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// Endpoint to retrieve payment status
+app.post('/process_payment', async (req, res) => {
+  const { rideId } = req.body;
+
+  if (!rideId) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  try {
     const payment = await paymentsCollection.findOne({ rideId });
 
     if (!payment) {
@@ -132,16 +169,19 @@ app.post('/process_payment', (req, res) => {
     }
 
     res.json({ rideId, status: payment.status });
-  });
+  } catch (err) {
+    console.error('Error processing payment:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
 });
 
+// Metrics endpoint
 app.get('/metrics', async (req, res) => {
   res.setHeader('Content-Type', register.contentType);
   res.end(await register.metrics());
 });
 
-
-// Express app for status
+// Status endpoint
 app.get('/status', (req, res) => {
   res.status(200).json({ status: 'Ride Payment Service is running' });
 });
@@ -149,32 +189,4 @@ app.get('/status', (req, res) => {
 // Start the HTTP server
 app.listen(SERVICE_PORT, () => {
   console.log(`Ride Payment Service is running on port ${SERVICE_PORT}`);
-});
-
-// WebSocket client to connect to user-location-service via Nginx
-const ws = new WebSocket('ws://nginx/ws/');
-
-ws.on('open', () => {
-  console.log('Connected to user-location-service via WebSocket');
-});
-
-ws.on('message', async (data) => {
-  const message = JSON.parse(data);
-  console.log('Received message via WebSocket:', message);
-
-  if (message.event === 'finish_order') {
-    const { rideId, realPrice, userId } = message.data;
-
-    // Automatically process payment
-    await paymentsCollection.insertOne({ rideId, amount: realPrice, userId, status: 'orderPaid' });
-    console.log(`Processed payment for rideId ${rideId}`);
-  }
-});
-
-ws.on('close', () => {
-  console.log('WebSocket connection closed');
-});
-
-ws.on('error', (error) => {
-  console.error('WebSocket error:', error);
 });

@@ -77,8 +77,8 @@ process.on('SIGINT', deregisterService);
 process.on('SIGTERM', deregisterService);
 
 // Initialize WebSocket Server
-const wss = new WebSocket.Server({ port: 8080 });
-console.log('WebSocket server is running on port 8080');
+const wss = new WebSocket.Server({ port: 8021 });
+console.log('WebSocket server is running on port 8021');
 
 let wsClients = [];
 

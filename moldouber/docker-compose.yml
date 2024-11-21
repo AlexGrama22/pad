@@ -58,6 +58,7 @@ services:
       - SERVICE_NAME=ride-payment-service
       - SERVICE_ADDRESS=ride-payment-service-1
       - SERVICE_PORT=5002
+      - WEBSOCKET_URLS=ws://user-location-service-1:8021/
     depends_on:
       - service-discovery
       - mongo
@@ -73,6 +74,7 @@ services:
       - SERVICE_NAME=ride-payment-service
       - SERVICE_ADDRESS=ride-payment-service-2
       - SERVICE_PORT=5002
+      - WEBSOCKET_URLS=ws://user-location-service-2:8021/
     depends_on:
       - service-discovery
       - mongo

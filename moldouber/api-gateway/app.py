@@ -202,6 +202,9 @@ def process_payment():
         return jsonify(response.json()), response.status_code
     except requests.exceptions.RequestException as e:
         return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        # Catch all other exceptions
+        return jsonify({"error": str(e)}), 503
 
 # Endpoint to check payment status
 @app.route('/api/user/check_payment_status', methods=['POST'])

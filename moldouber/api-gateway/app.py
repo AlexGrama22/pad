@@ -4,8 +4,26 @@ from flask import Flask, request, jsonify
 import os
 import requests
 import pybreaker
+from prometheus_flask_exporter import PrometheusMetrics
+
 
 app = Flask(__name__)
+metrics = PrometheusMetrics(app)
+metrics.info('app_info', 'API Gateway Information', version='1.0.0')
+
+# Define metrics
+REQUEST_COUNT = metrics.counter(
+    'api_gateway_request_count_total', 
+    'Total Request Count',
+    labels={'method': lambda: request.method, 'endpoint': lambda: request.path, 'http_status': lambda: request.status_code}
+)
+
+REQUEST_LATENCY = metrics.histogram(
+    'api_gateway_request_latency_seconds', 
+    'Request latency',
+    labels={'endpoint': lambda: request.path},
+    buckets=(0.1, 0.5, 1, 2, 5)
+)
 
 # Since Nginx is the gateway to the services, we can simplify service discovery
 NGINX_HOST = 'nginx'

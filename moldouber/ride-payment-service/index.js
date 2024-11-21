@@ -4,9 +4,44 @@ const { v4: uuidv4 } = require('uuid');
 const async = require('async'); // For concurrency control
 const axios = require('axios'); // For HTTP requests
 const WebSocket = require('ws'); // Add WebSocket library
+const client = require('prom-client');
 const app = express();
 
 app.use(express.json());
+
+const register = new client.Registry();
+
+// Collect default metrics
+client.collectDefaultMetrics({ register });
+
+// Define custom metrics
+const paymentCount = new client.Counter({
+  name: 'ride_payment_total',
+  help: 'Total number of ride payments processed',
+  labelNames: ['status']
+});
+
+const paymentDuration = new client.Histogram({
+  name: 'ride_payment_duration_seconds',
+  help: 'Duration of ride payment processing in seconds',
+  buckets: [0.1, 0.5, 1, 2, 5]
+});
+
+// Register metrics
+register.registerMetric(paymentCount);
+register.registerMetric(paymentDuration);
+
+// Middleware to measure payment processing time and count
+app.use((req, res, next) => {
+  if (req.path === '/metrics') return next();
+  const end = paymentDuration.startTimer();
+  res.on('finish', () => {
+    const status = res.statusCode >= 400 ? 'failure' : 'success';
+    paymentCount.labels(status).inc();
+    end();
+  });
+  next();
+});
 
 // MongoDB client setup
 const mongoClient = new MongoClient('mongodb://mongo:27017', { useUnifiedTopology: true });
@@ -99,6 +134,12 @@ app.post('/process_payment', (req, res) => {
     res.json({ rideId, status: payment.status });
   });
 });
+
+app.get('/metrics', async (req, res) => {
+  res.setHeader('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
+
 
 // Express app for status
 app.get('/status', (req, res) => {

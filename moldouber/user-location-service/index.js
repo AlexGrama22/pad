@@ -1,26 +1,16 @@
 // user-location-service/index.js
 
-const grpc = require('@grpc/grpc-js');
-const protoLoader = require('@grpc/proto-loader');
+const express = require('express');
 const { Pool } = require('pg'); // PostgreSQL client
 const redis = require('redis');
 const { v4: uuidv4 } = require('uuid');  // For generating IDs
-const express = require('express');
 const async = require('async'); // Import async for concurrency control
-const axios = require('axios'); // Add axios for HTTP requests
-const WebSocket = require('ws'); // Add WebSocket library
+const axios = require('axios'); // For HTTP requests
+const WebSocket = require('ws'); // WebSocket library
 const app = express();
 const rooms = {};
 
-const PROTO_PATH = '/usr/src/proto/user_location.proto';
-const RIDE_PAYMENT_PROTO_PATH = '/usr/src/proto/ride_payment.proto';
-
-// Load proto definitions
-const packageDefinition = protoLoader.loadSync(PROTO_PATH);
-const ridePaymentDefinition = protoLoader.loadSync(RIDE_PAYMENT_PROTO_PATH);
-
-const userLocationProto = grpc.loadPackageDefinition(packageDefinition).userLocation;
-const ridePaymentProto = grpc.loadPackageDefinition(ridePaymentDefinition).ride_payment;
+app.use(express.json());
 
 // PostgreSQL client setup
 const pool = new Pool({
@@ -40,7 +30,7 @@ redisClient.connect(); // Connect Redis client
 // Task queue with concurrency limit of 6
 const taskQueue = async.queue(async (task) => {
   return task();
-}, 2);  // Limit concurrency to 6
+}, 2);  // Limit concurrency to 2
 
 // Mock function to calculate estimated price
 function calculateEstimatedPrice(startLatitude, startLongitude, endLatitude, endLongitude) {
@@ -48,15 +38,15 @@ function calculateEstimatedPrice(startLatitude, startLongitude, endLatitude, end
 }
 
 // Service Discovery Configuration
-const SERVICE_DISCOVERY_URL = process.env.SERVICE_DISCOVERY_URL || 'http://service-discovery:8500/register';
+const SERVICE_DISCOVERY_URL = process.env.SERVICE_DISCOVERY_URL || 'http://service-discovery:8500';
 const SERVICE_NAME = process.env.SERVICE_NAME || 'user-location-service';
 const SERVICE_ADDRESS = process.env.SERVICE_ADDRESS || 'user-location-service';
-const SERVICE_PORT = process.env.SERVICE_PORT || 50051;
+const SERVICE_PORT = process.env.SERVICE_PORT || 5001;
 
 // Function to register the service
 async function registerService() {
     try {
-        await axios.post('http://service-discovery:8500/register', {
+        await axios.post(`${SERVICE_DISCOVERY_URL}/register`, {
             service_name: SERVICE_NAME,
             service_address: SERVICE_ADDRESS,
             service_port: SERVICE_PORT
@@ -70,7 +60,7 @@ async function registerService() {
 // Function to deregister the service
 async function deregisterService() {
     try {
-        await axios.post('http://service-discovery:8500/deregister', {
+        await axios.post(`${SERVICE_DISCOVERY_URL}/deregister`, {
             service_name: SERVICE_NAME,
             service_address: SERVICE_ADDRESS,
             service_port: SERVICE_PORT
@@ -161,10 +151,14 @@ function broadcastToRoom(orderId, message) {
   }
 }
 
-// MakeOrder method with Redis caching
-async function makeOrder(call, callback) {
+// MakeOrder endpoint with Redis caching
+app.post('/make_order', (req, res) => {
   taskQueue.push(async () => {
-    const { userId, startLongitude, startLatitude, endLongitude, endLatitude } = call.request;
+    const { userId, startLongitude, startLatitude, endLongitude, endLatitude } = req.body;
+
+    if (!userId || !startLongitude || !startLatitude || !endLongitude || !endLatitude) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
 
     const orderId = uuidv4();  // Generate unique orderId
     const estimatedPrice = calculateEstimatedPrice(startLatitude, startLongitude, endLatitude, endLongitude);
@@ -172,35 +166,35 @@ async function makeOrder(call, callback) {
 
     // Store the order in Redis cache
     await redisClient.set(orderId, JSON.stringify({
-      userId, 
-      startLongitude, 
-      startLatitude, 
-      endLongitude, 
-      endLatitude, 
+      userId,
+      startLongitude,
+      startLatitude,
+      endLongitude,
+      endLatitude,
       estimatedPrice
     }), {
       EX: 3600 // Set expiration for 1 hour
     });
 
-    callback(null, { orderId, estimatedPrice });
+    res.json({ orderId, estimatedPrice });
   });
-}
+});
 
-// AcceptOrder method with PostgreSQL insert
-async function acceptOrder(call, callback) {
+// AcceptOrder endpoint with PostgreSQL insert
+app.post('/accept_order', (req, res) => {
   taskQueue.push(async () => {
-    const { orderId, driverId } = call.request;
+    const { orderId, driverId } = req.body;
+
+    if (!orderId || !driverId) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
 
     // Retrieve the order details from Redis cache
     const orderData = await redisClient.get(orderId);
     broadcastToRoom(orderId, { type: 'join_room', orderId, driverId });
-    
+
     if (!orderData) {
-      callback({
-        code: grpc.status.NOT_FOUND,
-        message: 'Order not found'
-      });
-      return;
+      return res.status(404).json({ error: 'Order not found' });
     }
 
     const order = JSON.parse(orderData);
@@ -214,53 +208,45 @@ async function acceptOrder(call, callback) {
       );
     } catch (err) {
       console.error('Error saving to PostgreSQL:', err);
-      callback({
-        code: grpc.status.INTERNAL,
-        message: 'Error saving ride data'
-      });
-      return;
+      return res.status(500).json({ error: 'Error saving ride data' });
     }
 
     // Respond with the stored values
-    callback(null, { 
-      rideId, 
+    res.json({
+      rideId,
       userId: order.userId,
-      startLongitude: order.startLongitude, 
-      startLatitude: order.startLatitude, 
-      endLongitude: order.endLongitude, 
-      endLatitude: order.endLatitude, 
-      estimatedPrice: order.estimatedPrice 
+      startLongitude: order.startLongitude,
+      startLatitude: order.startLatitude,
+      endLongitude: order.endLongitude,
+      endLatitude: order.endLatitude,
+      estimatedPrice: order.estimatedPrice
     });
   });
-}
+});
 
-// FinishOrder method
-async function finishOrder(call, callback) {
+// FinishOrder endpoint
+app.post('/finish_order', (req, res) => {
   taskQueue.push(async () => {
-    const { rideId, realPrice } = call.request;
+    const { rideId, realPrice } = req.body;
+
+    if (!rideId || !realPrice) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
 
     const paymentStatus = 'notPaid';
 
     // Retrieve userId from PostgreSQL
     let userId;
     try {
-      const res = await pool.query('SELECT userId FROM rides WHERE rideId = $1', [rideId]);
-      if (res.rows.length > 0) {
-        userId = res.rows[0].userid;
+      const result = await pool.query('SELECT userId FROM rides WHERE rideId = $1', [rideId]);
+      if (result.rows.length > 0) {
+        userId = result.rows[0].userid;
       } else {
-        callback({
-          code: grpc.status.NOT_FOUND,
-          message: 'Ride not found'
-        });
-        return;
+        return res.status(404).json({ error: 'Ride not found' });
       }
     } catch (err) {
       console.error('Error querying PostgreSQL:', err);
-      callback({
-        code: grpc.status.INTERNAL,
-        message: 'Error retrieving ride data'
-      });
-      return;
+      return res.status(500).json({ error: 'Error retrieving ride data' });
     }
 
     // Notify ride-payment-service via WebSocket
@@ -275,81 +261,63 @@ async function finishOrder(call, callback) {
     broadcast(message);
     console.log('Sent finish_order event via WebSocket:', message);
 
-    callback(null, { paymentStatus, userId });
+    res.json({ paymentStatus, userId });
   });
-}
+});
 
-// PaymentCheck method (remains unchanged)
-async function paymentCheck(call, callback) {
+// PaymentCheck endpoint
+app.post('/payment_check', (req, res) => {
   taskQueue.push(async () => {
-    const { rideId } = call.request;
+    const { rideId } = req.body;
+
+    if (!rideId) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
 
     // Retrieve userId from PostgreSQL
     let userId;
     try {
-      const res = await pool.query('SELECT userId FROM rides WHERE rideId = $1', [rideId]);
-      if (res.rows.length > 0) {
-        userId = res.rows[0].userid;
+      const result = await pool.query('SELECT userId FROM rides WHERE rideId = $1', [rideId]);
+      if (result.rows.length > 0) {
+        userId = result.rows[0].userid;
       } else {
-        callback({
-          code: grpc.status.NOT_FOUND,
-          message: 'Ride not found'
-        });
-        return;
+        return res.status(404).json({ error: 'Ride not found' });
       }
     } catch (err) {
       console.error('Error querying PostgreSQL:', err);
-      callback({
-        code: grpc.status.INTERNAL,
-        message: 'Error retrieving ride data'
-      });
-      return;
+      return res.status(500).json({ error: 'Error retrieving ride data' });
     }
 
-    const ridePaymentClient = new ridePaymentProto.RidePaymentService(
-      'ride-payment-service:50052',  // Use service name for discovery
-      grpc.credentials.createInsecure()
-    );
+    // Discover Ride Payment Service
+    const ridePaymentServiceInfo = await axios.get(`${SERVICE_DISCOVERY_URL}/services/ride-payment-service`)
+      .then(response => response.data)
+      .catch(err => {
+        console.error('Error discovering Ride Payment Service:', err);
+        return null;
+      });
 
-    const paymentRequest = { rideId };
+    if (!ridePaymentServiceInfo) {
+      return res.status(503).json({ error: 'Ride Payment Service not available' });
+    }
 
-    const deadline = new Date();
-    deadline.setSeconds(deadline.getSeconds() + 10);
+    const ridePaymentUrl = `http://${ridePaymentServiceInfo.address}:${ridePaymentServiceInfo.port}/process_payment`;
 
-    ridePaymentClient.ProcessPayment(paymentRequest, { deadline }, (error, response) => {
-      if (error) {
-        console.error('Error communicating with RidePaymentService:', error);
-        callback({
-          code: grpc.status.INTERNAL,
-          message: 'Error fetching payment status'
-        });
-      } else {
-        callback(null, { status: response.status, userId });
-      }
-    });
+    try {
+      const paymentResponse = await axios.post(ridePaymentUrl, { rideId }, { timeout: 10000 });
+      res.json({ status: paymentResponse.data.status, userId });
+    } catch (err) {
+      console.error('Error communicating with Ride Payment Service:', err);
+      res.status(500).json({ error: 'Error fetching payment status' });
+    }
   });
-}
-
-// gRPC server setup
-const server = new grpc.Server();
-server.addService(userLocationProto.UserLocationService.service, { 
-  MakeOrder: makeOrder, 
-  AcceptOrder: acceptOrder,
-  FinishOrder: finishOrder,
-  PaymentCheck: paymentCheck
-});
-
-server.bindAsync('0.0.0.0:50051', grpc.ServerCredentials.createInsecure(), () => {
-    console.log('User Location Service is running on port 50051');
-    server.start();
 });
 
 // Express app for status
 app.get('/status', (req, res) => {
-    res.status(200).json({ status: 'User Location Service is running' });
+  res.status(200).json({ status: 'User Location Service is running' });
 });
 
-// Start the status server
-app.listen(4001, () => {
-    console.log('User Location Service Status Endpoint is running on port 4001');
+// Start the HTTP server
+app.listen(SERVICE_PORT, () => {
+  console.log(`User Location Service is running on port ${SERVICE_PORT}`);
 });

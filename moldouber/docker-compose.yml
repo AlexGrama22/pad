@@ -5,50 +5,88 @@ services:
     ports:
       - "5000:5000"
     depends_on:
-      - user-location-service
-      - ride-payment-service
+      - nginx
       - service-discovery
     environment:
       - SERVICE_DISCOVERY_URL=http://service-discovery:8500
     networks:
       - moldo-net
 
-  ride-payment-service:
-    build: ./ride-payment-service
-    volumes:
-      - ./proto:/usr/src/proto  
-    environment:
-      - SERVICE_DISCOVERY_URL=http://service-discovery:8500
-      - SERVICE_NAME=ride-payment-service
-      - SERVICE_ADDRESS=ride-payment-service
-      - SERVICE_PORT=50052
-    depends_on:
-      - service-discovery
-      - user-location-service
-    ports:
-      - "4000:4000"
-    networks:
-      - moldo-net
-
-  user-location-service:
+  user-location-service-1:
     build: ./user-location-service
     volumes:
       - ./proto:/usr/src/proto
-    ports:
-      - "50051:50051"
-      - "4001:4001"    # Status endpoint
-      - "8080:8080"  
-    depends_on:
-      - postgres
-      - service-discovery
     environment:
       - POSTGRES_USER=myuser
       - POSTGRES_PASSWORD=mypassword
       - POSTGRES_DB=userlocationdb
       - SERVICE_DISCOVERY_URL=http://service-discovery:8500
       - SERVICE_NAME=user-location-service
-      - SERVICE_ADDRESS=user-location-service
-      - SERVICE_PORT=50051
+      - SERVICE_ADDRESS=user-location-service-1
+      - SERVICE_PORT=5001
+    depends_on:
+      - postgres
+      - service-discovery
+    networks:
+      - moldo-net
+
+  user-location-service-2:
+    build: ./user-location-service
+    volumes:
+      - ./proto:/usr/src/proto
+    environment:
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=mypassword
+      - POSTGRES_DB=userlocationdb
+      - SERVICE_DISCOVERY_URL=http://service-discovery:8500
+      - SERVICE_NAME=user-location-service
+      - SERVICE_ADDRESS=user-location-service-2
+      - SERVICE_PORT=5001
+    depends_on:
+      - postgres
+      - service-discovery
+    networks:
+      - moldo-net
+
+  ride-payment-service-1:
+    build: ./ride-payment-service
+    volumes:
+      - ./proto:/usr/src/proto
+    environment:
+      - SERVICE_DISCOVERY_URL=http://service-discovery:8500
+      - SERVICE_NAME=ride-payment-service
+      - SERVICE_ADDRESS=ride-payment-service-1
+      - SERVICE_PORT=5002
+    depends_on:
+      - service-discovery
+      - mongo
+    networks:
+      - moldo-net
+
+  ride-payment-service-2:
+    build: ./ride-payment-service
+    volumes:
+      - ./proto:/usr/src/proto
+    environment:
+      - SERVICE_DISCOVERY_URL=http://service-discovery:8500
+      - SERVICE_NAME=ride-payment-service
+      - SERVICE_ADDRESS=ride-payment-service-2
+      - SERVICE_PORT=5002
+    depends_on:
+      - service-discovery
+      - mongo
+    networks:
+      - moldo-net
+
+  nginx:
+    build: ./nginx
+    ports:
+      - "8080:80"  # Expose Nginx on port 8080
+    depends_on:
+      - user-location-service-1
+      - user-location-service-2
+      - ride-payment-service-1
+      - ride-payment-service-2
     networks:
       - moldo-net
 

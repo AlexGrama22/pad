@@ -1,11 +1,9 @@
-// ride-payment-service/index.js
-
 const express = require('express');
 const { MongoClient } = require('mongodb');
 const { v4: uuidv4 } = require('uuid');
 const async = require('async'); // For concurrency control
 const axios = require('axios'); // For HTTP requests
-const WebSocket = require('ws'); // WebSocket library
+const WebSocket = require('ws'); // Add WebSocket library
 const app = express();
 
 app.use(express.json());
@@ -37,8 +35,8 @@ async function registerService() {
     try {
         await axios.post(`${SERVICE_DISCOVERY_URL}/register`, {
             service_name: SERVICE_NAME,
-            service_address: SERVICE_ADDRESS,
-            service_port: SERVICE_PORT
+            service_address: 'nginx',  // Register Nginx as the service address
+            service_port: '80'          // Nginx listens on port 80 inside the container
         });
         console.log(`${SERVICE_NAME} registered with Service Discovery`);
     } catch (error) {
@@ -51,8 +49,8 @@ async function deregisterService() {
     try {
         await axios.post(`${SERVICE_DISCOVERY_URL}/deregister`, {
             service_name: SERVICE_NAME,
-            service_address: SERVICE_ADDRESS,
-            service_port: SERVICE_PORT
+            service_address: 'nginx',
+            service_port: '80'
         });
         console.log(`${SERVICE_NAME} deregistered from Service Discovery`);
     } catch (error) {
@@ -112,8 +110,8 @@ app.listen(SERVICE_PORT, () => {
   console.log(`Ride Payment Service is running on port ${SERVICE_PORT}`);
 });
 
-// WebSocket client to connect to user-location-service
-const ws = new WebSocket('ws://user-location-service:8080');
+// WebSocket client to connect to user-location-service via Nginx
+const ws = new WebSocket('ws://nginx/ws/');
 
 ws.on('open', () => {
   console.log('Connected to user-location-service via WebSocket');

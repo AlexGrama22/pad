@@ -6,21 +6,21 @@ import requests
 
 app = Flask(__name__)
 
-# Service Discovery Configuration
-SERVICE_DISCOVERY_URL = os.getenv('SERVICE_DISCOVERY_URL', 'http://service-discovery:8500')
+# Since Nginx is the gateway to the services, we can simplify service discovery
+NGINX_HOST = 'nginx'
+NGINX_PORT = 80
 
-def discover_service(service_name):
-    try:
-        response = requests.get(f"{SERVICE_DISCOVERY_URL}/services/{service_name}", timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            return data['address'], data['port']
-        else:
-            app.logger.error(f"Service {service_name} not found in Service Discovery")
-            return None, None
-    except Exception as e:
-        app.logger.error(f"Error discovering service {service_name}: {str(e)}")
-        return None, None
+def call_user_location_service(endpoint, payload):
+    url = f"http://{NGINX_HOST}:{NGINX_PORT}/user-location/{endpoint}"
+    response = requests.post(url, json=payload, timeout=10)
+    response.raise_for_status()
+    return response
+
+def call_ride_payment_service(endpoint, payload):
+    url = f"http://{NGINX_HOST}:{NGINX_PORT}/ride-payment/{endpoint}"
+    response = requests.post(url, json=payload, timeout=10)
+    response.raise_for_status()
+    return response
 
 # Endpoint to create an order
 @app.route('/api/user/make_order', methods=['POST'])
@@ -35,11 +35,6 @@ def make_order():
     if not all([user_id, start_long, start_lat, end_long, end_lat]):
         return jsonify({"error": "Missing required fields"}), 400
 
-    user_location_host, user_location_port = discover_service('user-location-service')
-    if not user_location_host or not user_location_port:
-        return jsonify({"error": "User Location Service not available"}), 503
-
-    url = f"http://{user_location_host}:{user_location_port}/make_order"
     payload = {
         "userId": user_id,
         "startLongitude": start_long,
@@ -49,12 +44,10 @@ def make_order():
     }
 
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        response = call_user_location_service('make_order', payload)
         return jsonify(response.json()), response.status_code
-    except requests.exceptions.Timeout:
-        return jsonify({"error": "Request timed out"}), 408
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": str(e)}), 503
 
 # Endpoint to accept an order
 @app.route('/api/user/accept_order', methods=['POST'])
@@ -66,23 +59,16 @@ def accept_order():
     if not all([order_id, driver_id]):
         return jsonify({"error": "Missing required fields"}), 400
 
-    user_location_host, user_location_port = discover_service('user-location-service')
-    if not user_location_host or not user_location_port:
-        return jsonify({"error": "User Location Service not available"}), 503
-
-    url = f"http://{user_location_host}:{user_location_port}/accept_order"
     payload = {
         "orderId": order_id,
         "driverId": driver_id
     }
 
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        response = call_user_location_service('accept_order', payload)
         return jsonify(response.json()), response.status_code
-    except requests.exceptions.Timeout:
-        return jsonify({"error": "Request timed out"}), 408
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": str(e)}), 503
 
 # Endpoint to finish an order
 @app.route('/api/user/finish_order', methods=['POST'])
@@ -94,23 +80,16 @@ def finish_order():
     if not all([ride_id, real_price]):
         return jsonify({"error": "Missing required fields"}), 400
 
-    user_location_host, user_location_port = discover_service('user-location-service')
-    if not user_location_host or not user_location_port:
-        return jsonify({"error": "User Location Service not available"}), 503
-
-    url = f"http://{user_location_host}:{user_location_port}/finish_order"
     payload = {
         "rideId": ride_id,
         "realPrice": real_price
     }
 
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        response = call_user_location_service('finish_order', payload)
         return jsonify(response.json()), response.status_code
-    except requests.exceptions.Timeout:
-        return jsonify({"error": "Request timed out"}), 408
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": str(e)}), 503
 
 # Endpoint to pay for a ride
 @app.route('/api/ride/pay', methods=['POST'])
@@ -123,11 +102,6 @@ def pay_ride():
     if not all([ride_id, amount, user_id]):
         return jsonify({"error": "Missing required fields"}), 400
 
-    ride_payment_host, ride_payment_port = discover_service('ride-payment-service')
-    if not ride_payment_host or not ride_payment_port:
-        return jsonify({"error": "Ride Payment Service not available"}), 503
-
-    url = f"http://{ride_payment_host}:{ride_payment_port}/pay_ride"
     payload = {
         "rideId": ride_id,
         "amount": amount,
@@ -135,12 +109,10 @@ def pay_ride():
     }
 
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        response = call_ride_payment_service('pay_ride', payload)
         return jsonify(response.json()), response.status_code
-    except requests.exceptions.Timeout:
-        return jsonify({"error": "Request timed out"}), 408
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": str(e)}), 503
 
 # Endpoint to process payment
 @app.route('/api/ride/process_payment', methods=['POST'])
@@ -151,22 +123,15 @@ def process_payment():
     if not ride_id:
         return jsonify({"error": "Missing required fields"}), 400
 
-    ride_payment_host, ride_payment_port = discover_service('ride-payment-service')
-    if not ride_payment_host or not ride_payment_port:
-        return jsonify({"error": "Ride Payment Service not available"}), 503
-
-    url = f"http://{ride_payment_host}:{ride_payment_port}/process_payment"
     payload = {
         "rideId": ride_id
     }
 
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        response = call_ride_payment_service('process_payment', payload)
         return jsonify(response.json()), response.status_code
-    except requests.exceptions.Timeout:
-        return jsonify({"error": "Request timed out"}), 408
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": str(e)}), 503
 
 # Endpoint to check payment status
 @app.route('/api/user/check_payment_status', methods=['POST'])
@@ -177,17 +142,12 @@ def check_payment_status():
     if not ride_id:
         return jsonify({"error": "Missing required fields"}), 400
 
-    user_location_host, user_location_port = discover_service('user-location-service')
-    if not user_location_host or not user_location_port:
-        return jsonify({"error": "User Location Service not available"}), 503
-
-    url = f"http://{user_location_host}:{user_location_port}/payment_check"
     payload = {
         "rideId": ride_id
     }
 
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        response = call_user_location_service('payment_check', payload)
         if response.status_code == 404:
             return jsonify({
                 'rideId': ride_id,
@@ -195,10 +155,8 @@ def check_payment_status():
             }), 200
         else:
             return jsonify(response.json()), response.status_code
-    except requests.exceptions.Timeout:
-        return jsonify({"error": "Request timed out"}), 408
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": str(e)}), 503
 
 @app.route('/status', methods=['GET'])
 def status():

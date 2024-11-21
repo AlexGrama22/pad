@@ -1,12 +1,10 @@
-// user-location-service/index.js
-
 const express = require('express');
-const { Pool } = require('pg'); // PostgreSQL client
+const { Pool } = require('pg'); 
 const redis = require('redis');
-const { v4: uuidv4 } = require('uuid');  // For generating IDs
-const async = require('async'); // Import async for concurrency control
-const axios = require('axios'); // For HTTP requests
-const WebSocket = require('ws'); // WebSocket library
+const { v4: uuidv4 } = require('uuid');  
+const async = require('async'); 
+const axios = require('axios');
+const WebSocket = require('ws');
 const app = express();
 const rooms = {};
 
@@ -27,7 +25,7 @@ const redisClient = redis.createClient({
 });
 redisClient.connect(); // Connect Redis client
 
-// Task queue with concurrency limit of 6
+// Task queue with concurrency limit of 2
 const taskQueue = async.queue(async (task) => {
   return task();
 }, 2);  // Limit concurrency to 2
@@ -48,8 +46,8 @@ async function registerService() {
     try {
         await axios.post(`${SERVICE_DISCOVERY_URL}/register`, {
             service_name: SERVICE_NAME,
-            service_address: SERVICE_ADDRESS,
-            service_port: SERVICE_PORT
+            service_address: 'nginx',  // Register Nginx as the service address
+            service_port: '80'          // Nginx listens on port 80 inside the container
         });
         console.log(`${SERVICE_NAME} registered with Service Discovery`);
     } catch (error) {
@@ -62,8 +60,8 @@ async function deregisterService() {
     try {
         await axios.post(`${SERVICE_DISCOVERY_URL}/deregister`, {
             service_name: SERVICE_NAME,
-            service_address: SERVICE_ADDRESS,
-            service_port: SERVICE_PORT
+            service_address: 'nginx',
+            service_port: '80'
         });
         console.log(`${SERVICE_NAME} deregistered from Service Discovery`);
     } catch (error) {
@@ -288,26 +286,15 @@ app.post('/payment_check', (req, res) => {
       return res.status(500).json({ error: 'Error retrieving ride data' });
     }
 
-    // Discover Ride Payment Service
-    const ridePaymentServiceInfo = await axios.get(`${SERVICE_DISCOVERY_URL}/services/ride-payment-service`)
-      .then(response => response.data)
-      .catch(err => {
-        console.error('Error discovering Ride Payment Service:', err);
-        return null;
-      });
-
-    if (!ridePaymentServiceInfo) {
-      return res.status(503).json({ error: 'Ride Payment Service not available' });
-    }
-
-    const ridePaymentUrl = `http://${ridePaymentServiceInfo.address}:${ridePaymentServiceInfo.port}/process_payment`;
+    // Discover Ride Payment Service via Nginx
+    const ridePaymentUrl = `http://nginx/ride-payment/process_payment`;
 
     try {
       const paymentResponse = await axios.post(ridePaymentUrl, { rideId }, { timeout: 10000 });
       res.json({ status: paymentResponse.data.status, userId });
     } catch (err) {
       console.error('Error communicating with Ride Payment Service:', err);
-      res.status(500).json({ error: 'Error fetching payment status' });
+      res.status(503).json({ error: 'Error fetching payment status' });
     }
   });
 });

@@ -28,6 +28,9 @@ services:
     depends_on:
       - postgres
       - service-discovery
+      - redis-shard1-primary
+      - redis-shard2-primary
+      - redis-shard3-primary
     networks:
       - moldo-net
 
@@ -46,6 +49,9 @@ services:
     depends_on:
       - postgres
       - service-discovery
+      - redis-shard1-primary
+      - redis-shard2-primary
+      - redis-shard3-primary
     networks:
       - moldo-net
 
@@ -62,6 +68,9 @@ services:
     depends_on:
       - service-discovery
       - mongo
+      - redis-shard1-primary
+      - redis-shard2-primary
+      - redis-shard3-primary
     networks:
       - moldo-net
 
@@ -78,6 +87,9 @@ services:
     depends_on:
       - service-discovery
       - mongo
+      - redis-shard1-primary
+      - redis-shard2-primary
+      - redis-shard3-primary
     networks:
       - moldo-net
 
@@ -113,10 +125,64 @@ services:
     networks:
       - moldo-net
 
-  redis:
+  # redis:
+  #   image: redis:7.4
+  #   ports:
+  #     - "6379:6379"
+  #   networks:
+  #     - moldo-net
+
+  redis-shard1-primary:
     image: redis:7.4
+    command: ["redis-server", "--port", "6379"]
     ports:
       - "6379:6379"
+    networks:
+      - moldo-net
+
+  redis-shard1-replica:
+    image: redis:7.4
+    command: ["redis-server", "--port", "6379", "--slaveof", "redis-shard1-primary", "6379"]
+    ports:
+      - "6380:6379"
+    depends_on:
+      - redis-shard1-primary
+    networks:
+      - moldo-net
+
+  redis-shard2-primary:
+    image: redis:7.4
+    command: ["redis-server", "--port", "6379"]
+    ports:
+      - "6381:6379"
+    networks:
+      - moldo-net
+
+  redis-shard2-replica:
+    image: redis:7.4
+    command: ["redis-server", "--port", "6379", "--slaveof", "redis-shard2-primary", "6379"]
+    ports:
+      - "6382:6379"
+    depends_on:
+      - redis-shard2-primary
+    networks:
+      - moldo-net
+
+  redis-shard3-primary:
+    image: redis:7.4
+    command: ["redis-server", "--port", "6379"]
+    ports:
+      - "6383:6379"
+    networks:
+      - moldo-net
+
+  redis-shard3-replica:
+    image: redis:7.4
+    command: ["redis-server", "--port", "6379", "--slaveof", "redis-shard3-primary", "6379"]
+    ports:
+      - "6384:6379"
+    depends_on:
+      - redis-shard3-primary
     networks:
       - moldo-net
 

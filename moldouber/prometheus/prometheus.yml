@@ -28,3 +28,15 @@ scrape_configs:
     metrics_path: '/metrics'
     static_configs:
       - targets: ['ride-payment-service-2:5002']
+
+  - job_name: 'redis-shard1'
+    static_configs:
+      - targets: ['redis-shard1-primary:6379']
+
+  - job_name: 'redis-shard2'
+    static_configs:
+      - targets: ['redis-shard2-primary:6379']
+
+  - job_name: 'redis-shard3'
+    static_configs:
+      - targets: ['redis-shard3-primary:6379']

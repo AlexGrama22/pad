@@ -1,6 +1,6 @@
 const express = require('express');
 const { Pool } = require('pg'); 
-const redis = require('redis');
+const Redis = require('ioredis');
 const { v4: uuidv4 } = require('uuid');  
 const async = require('async'); 
 const axios = require('axios');
@@ -19,16 +19,116 @@ const pool = new Pool({
   port: 5432,
 });
 
-// Redis client setup
-const redisClient = redis.createClient({
-  url: 'redis://redis:6379'
+
+// Redis primary and replica setup
+const redisPrimaries = [
+  new Redis({ host: 'redis-shard1-primary', port: 6379 }),
+  new Redis({ host: 'redis-shard2-primary', port: 6379 }),
+  new Redis({ host: 'redis-shard3-primary', port: 6379 }),
+];
+
+const redisReplicas = [
+  new Redis({ host: 'redis-shard1-replica', port: 6379 }),
+  new Redis({ host: 'redis-shard2-replica', port: 6379 }),
+  new Redis({ host: 'redis-shard3-replica', port: 6379 }),
+];
+
+
+// redisShards.forEach((shard, index) => {
+//   shard.on('connect', () => console.log(`Connected to Redis Shard ${index + 1}`));
+//   shard.on('error', (err) => {
+//     console.error(`Redis Shard ${index + 1} connection error:`, err);
+//     setTimeout(() => shard.connect(), 5000); // Retry connection
+//   });
+
+//   shard.connect().catch((err) => console.error(`Failed to connect to Redis Shard ${index + 1}:`, err));
+// });
+
+const primaryHealth = new Map();
+redisPrimaries.forEach((primary, index) => {
+  primaryHealth.set(index, true);
+
+  primary.on('connect', () => {
+    console.log(`Primary Redis Shard ${index + 1} connected`);
+    primaryHealth.set(index, true);
+  });
+
+  primary.on('error', (err) => {
+    console.error(`Primary Redis Shard ${index + 1} error:`, err);
+    primaryHealth.set(index, false); // Mark as unavailable
+  });
 });
-redisClient.connect(); // Connect Redis client
+
+redisReplicas.forEach((replica, index) => {
+  replica.on('connect', () => console.log(`Replica Redis Shard ${index + 1} connected`));
+  replica.on('error', (err) => console.error(`Replica Redis Shard ${index + 1} error:`, err));
+});
+
+// Helper function to get a healthy primary shard for writing
+const getHealthyPrimary = () => {
+  for (let [index, isHealthy] of primaryHealth.entries()) {
+    if (isHealthy) {
+      return redisPrimaries[index];
+    }
+  }
+  throw new Error('No healthy primary Redis shards available');
+};
+
+const getShardIndex = (key) => key.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % redisPrimaries.length;
+
+// Cache data: Writes to a healthy primary
+const cacheData = async (key, value) => {
+  try {
+    const shardIndex = getShardIndex(key); // Calculate shard index based on key hash
+    const primaryShard = redisPrimaries[shardIndex]; // Get the primary shard for the calculated index
+
+    // Check if the selected primary shard is healthy
+    if (!primaryHealth.get(shardIndex)) {
+      throw new Error(`Primary Redis Shard ${shardIndex + 1} is unavailable`);
+    }
+
+    await primaryShard.set(key, JSON.stringify(value), 'EX', 3600); // Set with 1-hour TTL
+    console.log(`Key ${key} cached in Primary Shard ${shardIndex + 1}`);
+  } catch (err) {
+    console.error(`Error caching key ${key}:`, err);
+  }
+};
 
 // Task queue with concurrency limit of 2
 const taskQueue = async.queue(async (task) => {
   return task();
 }, 2);  // Limit concurrency to 2
+
+
+// Get data: Tries primary, falls back to replica
+const getCachedData = async (key) => {
+  const shardIndex = getShardIndex(key);
+  const primary = redisPrimaries[shardIndex];
+  const replica = redisReplicas[shardIndex];
+
+  try {
+    const data = await primary.get(key);
+    if (data) {
+      console.log(`Cache hit for key ${key} on Primary Shard ${shardIndex + 1}`);
+      return JSON.parse(data);
+    }
+  } catch (primaryErr) {
+    console.warn(`Primary shard ${shardIndex + 1} unavailable for key ${key}:`, primaryErr);
+  }
+
+  try {
+    const replicaData = await replica.get(key);
+    if (replicaData) {
+      console.log(`Cache hit for key ${key} on Replica Shard ${shardIndex + 1}`);
+      return JSON.parse(replicaData);
+    }
+  } catch (replicaErr) {
+    console.error(`Replica Shard ${shardIndex + 1} unavailable for key ${key}:`, replicaErr);
+  }
+
+  console.log(`Cache miss for key ${key}`);
+  return null;
+};
 
 // Mock function to calculate estimated price
 function calculateEstimatedPrice(startLatitude, startLongitude, endLatitude, endLongitude) {
@@ -150,77 +250,50 @@ function broadcastToRoom(orderId, message) {
 }
 
 // MakeOrder endpoint with Redis caching
-app.post('/make_order', (req, res) => {
-  taskQueue.push(async () => {
-    const { userId, startLongitude, startLatitude, endLongitude, endLatitude } = req.body;
+app.post('/make_order', async (req, res) => {
+  const { userId, startLongitude, startLatitude, endLongitude, endLatitude } = req.body;
 
-    if (!userId || !startLongitude || !startLatitude || !endLongitude || !endLatitude) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
+  if (!userId || !startLongitude || !startLatitude || !endLongitude || !endLatitude) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
 
-    const orderId = uuidv4();  // Generate unique orderId
-    const estimatedPrice = calculateEstimatedPrice(startLatitude, startLongitude, endLatitude, endLongitude);
-    broadcastToRoom(orderId, { type: 'join_room', orderId, userId });
+  const orderId = uuidv4();
+  const estimatedPrice = Math.random() * 100; // Mock price calculation
+  const orderData = { userId, startLongitude, startLatitude, endLongitude, endLatitude, estimatedPrice };
 
-    // Store the order in Redis cache
-    await redisClient.set(orderId, JSON.stringify({
-      userId,
-      startLongitude,
-      startLatitude,
-      endLongitude,
-      endLatitude,
-      estimatedPrice
-    }), {
-      EX: 3600 // Set expiration for 1 hour
-    });
+  await cacheData(orderId, orderData);
 
-    res.json({ orderId, estimatedPrice });
-  });
+  res.json({ orderId, estimatedPrice });
 });
 
 // AcceptOrder endpoint with PostgreSQL insert
-app.post('/accept_order', (req, res) => {
-  taskQueue.push(async () => {
-    const { orderId, driverId } = req.body;
+app.post('/accept_order', async (req, res) => {
+  const { orderId, driverId } = req.body;
 
-    if (!orderId || !driverId) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
+  if (!orderId || !driverId) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
 
-    // Retrieve the order details from Redis cache
-    const orderData = await redisClient.get(orderId);
-    broadcastToRoom(orderId, { type: 'join_room', orderId, driverId });
+  const orderData = await getCachedData(orderId);
+  if (!orderData) {
+    return res.status(404).json({ error: 'Order not found' });
+  }
 
-    if (!orderData) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
+  const rideId = uuidv4(); // Unique ride ID
 
-    const order = JSON.parse(orderData);
-    const rideId = uuidv4();  // Generate unique rideId
-
-    // Store ride info in PostgreSQL
-    try {
-      await pool.query(
-        'INSERT INTO rides (userId, rideId, driverId) VALUES ($1, $2, $3)',
-        [order.userId, rideId, driverId]
-      );
-    } catch (err) {
-      console.error('Error saving to PostgreSQL:', err);
-      return res.status(500).json({ error: 'Error saving ride data' });
-    }
-
-    // Respond with the stored values
-    res.json({
+  try {
+    await pool.query('INSERT INTO rides (userId, rideId, driverId) VALUES ($1, $2, $3)', [
+      orderData.userId,
       rideId,
-      userId: order.userId,
-      startLongitude: order.startLongitude,
-      startLatitude: order.startLatitude,
-      endLongitude: order.endLongitude,
-      endLatitude: order.endLatitude,
-      estimatedPrice: order.estimatedPrice
-    });
-  });
+      driverId,
+    ]);
+    res.json({ rideId, ...orderData });
+  } catch (err) {
+    console.error('Error saving ride data:', err);
+    res.status(500).json({ error: 'Error saving ride data' });
+  }
 });
+
 
 // FinishOrder endpoint
 app.post('/finish_order', (req, res) => {

@@ -266,7 +266,7 @@ app.post('/make_order', async (req, res) => {
   res.json({ orderId, estimatedPrice });
 });
 
-// AcceptOrder endpoint with PostgreSQL insert
+// AcceptOrder endpoint with fallback to slaves if masters are unavailable
 app.post('/accept_order', async (req, res) => {
   const { orderId, driverId } = req.body;
 
@@ -274,23 +274,52 @@ app.post('/accept_order', async (req, res) => {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
-  const orderData = await getCachedData(orderId);
+  let orderData;
+
+  // Helper function to check all masters or slaves for data
+  const checkRedisInstances = async (instances, key) => {
+    for (const [index, instance] of instances.entries()) {
+      try {
+        const data = await instance.get(key);
+        if (data) {
+          console.log(`Cache hit for key ${key} on Redis Instance ${index + 1}`);
+          return JSON.parse(data);
+        }
+      } catch (err) {
+        console.warn(`Redis Instance ${index + 1} unavailable or key not found:`, err);
+      }
+    }
+    return null;
+  };
+
+  // Try to retrieve data from all running master instances
+  orderData = await checkRedisInstances(redisPrimaries, orderId);
+
+  // If not found in masters, check all slave instances
   if (!orderData) {
-    return res.status(404).json({ error: 'Order not found' });
+    console.warn(`Key ${orderId} not found in any master, checking slaves...`);
+    orderData = await checkRedisInstances(redisReplicas, orderId);
+  }
+
+  // If still not found, return 404
+  if (!orderData) {
+    return res.status(404).json({ error: 'Order not found in Redis (Masters or Slaves)' });
   }
 
   const rideId = uuidv4(); // Unique ride ID
 
+  // Save to PostgreSQL
   try {
     await pool.query('INSERT INTO rides (userId, rideId, driverId) VALUES ($1, $2, $3)', [
       orderData.userId,
       rideId,
       driverId,
     ]);
+    console.log('Ride saved to PostgreSQL:', { userId: orderData.userId, rideId, driverId });
     res.json({ rideId, ...orderData });
   } catch (err) {
-    console.error('Error saving ride data:', err);
-    res.status(500).json({ error: 'Error saving ride data' });
+    console.error('Error saving ride data to PostgreSQL:', err);
+    res.status(500).json({ error: 'Error saving ride data to PostgreSQL' });
   }
 });
 

@@ -7,6 +7,7 @@ const axios = require('axios');
 const WebSocket = require('ws');
 const app = express();
 const rooms = {};
+const client = require('prom-client');
 
 app.use(express.json());
 
@@ -32,6 +33,65 @@ const redisReplicas = [
   new Redis({ host: 'redis-shard2-replica', port: 6379 }),
   new Redis({ host: 'redis-shard3-replica', port: 6379 }),
 ];
+
+const register = new client.Registry();
+client.collectDefaultMetrics({ register }); // Collect default metrics
+
+
+// Custom Prometheus Metrics
+const requestCount = new client.Counter({
+  name: 'user_location_service_requests_total',
+  help: 'Total number of requests to the user location service',
+  labelNames: ['endpoint', 'method', 'status'],
+});
+const requestDuration = new client.Histogram({
+  name: 'user_location_service_request_duration_seconds',
+  help: 'Duration of user location service requests in seconds',
+  labelNames: ['endpoint', 'method'],
+  buckets: [0.1, 0.5, 1, 2, 5], // Example buckets for request duration
+});
+const cacheHits = new client.Counter({
+  name: 'user_location_service_cache_hits',
+  help: 'Number of cache hits',
+  labelNames: ['shard'],
+});
+const cacheMisses = new client.Counter({
+  name: 'user_location_service_cache_misses',
+  help: 'Number of cache misses',
+});
+
+// Register custom metrics
+register.registerMetric(requestCount);
+register.registerMetric(requestDuration);
+register.registerMetric(cacheHits);
+register.registerMetric(cacheMisses);
+
+
+app.use((req, res, next) => {
+  if (req.path === '/metrics') return next();
+
+  const start = Date.now();
+  const endpoint = req.path;
+  const method = req.method;
+
+  res.on('finish', () => {
+    const duration = (Date.now() - start) / 1000;
+    requestCount.labels(endpoint, method, res.statusCode.toString()).inc();
+    requestDuration.labels(endpoint, method).observe(duration);
+  });
+
+  next();
+});
+
+// Helper function to record cache hits/misses
+const recordCacheMetrics = (isHit, shardIndex) => {
+  const shardLabel = `shard_${shardIndex + 1}`;
+  if (isHit) {
+    cacheHits.labels(shardLabel).inc();
+  } else {
+    cacheMisses.labels(shardLabel).inc();
+  }
+};
 
 
 // redisShards.forEach((shard, index) => {
@@ -400,6 +460,12 @@ app.post('/payment_check', (req, res) => {
     }
   });
 });
+
+app.get('/metrics', async (req, res) => {
+  res.setHeader('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
+
 
 // Express app for status
 app.get('/status', (req, res) => {

@@ -4,12 +4,15 @@ from flask import Flask, request, jsonify
 import os
 import requests
 import pybreaker
+import threading
+from datetime import datetime, timedelta
 from prometheus_flask_exporter import PrometheusMetrics
 
 
 app = Flask(__name__)
 metrics = PrometheusMetrics(app)
 metrics.info('app_info', 'API Gateway Information', version='1.0.0')
+blacklist_lock = threading.Lock()
 
 # Define metrics
 REQUEST_COUNT = metrics.counter(
@@ -29,62 +32,81 @@ REQUEST_LATENCY = metrics.histogram(
 NGINX_HOST = 'nginx'
 NGINX_PORT = 80
 
+SERVICE_HOSTS = {
+    'user-location': [
+        'http://user-location-service-1:5001',
+        'http://user-location-service-2:5001'
+    ],
+    'ride-payment': [
+        'http://ride-payment-service-1:5002',
+        'http://ride-payment-service-2:5002'
+    ]
+}
+
+blacklist = {}
 
 def call_service_with_retry(endpoint, payload, service_type):
-    retries_per_instance = 2  # Retry 3 times per instance
-    total_instances = 2  # Number of total instances available
-    attempts = 0  # Total attempts counter
-    instance_index = 0  # Tracks the current instance being used
+    retries_per_instance = 5  # Number of retries per instance
+    timeout = 10  # Timeout in seconds for each request
+    blacklist_duration = timedelta(minutes=1)  # Duration to blacklist an instance
 
-    while attempts < retries_per_instance * total_instances:
-        try:
-            # Construct the service URL
-            url = f"http://{NGINX_HOST}:{NGINX_PORT}/{service_type}/{endpoint}"
+    if service_type not in SERVICE_HOSTS:
+        raise ValueError(f"Unknown service type: {service_type}")
 
-            # Make the request
-            response = requests.post(url, json=payload, timeout=30)
+    service_instances = SERVICE_HOSTS[service_type]
+    total_instances = len(service_instances)
+    all_instances_blacklisted = True  # Flag to check if all instances are blacklisted
 
-            # Get the upstream container name or IP from the response headers
-            upstream_server = response.headers.get("X-Upstream-Server", f"Instance-{instance_index + 1}")
+    for instance_index, host in enumerate(service_instances):
+        instance_key = (service_type, instance_index)
 
-            # Log the attempt
-            print(f"Attempt {attempts + 1} (Retry {attempts % retries_per_instance + 1}/{retries_per_instance} on {upstream_server}): Connecting to {url}")
+        # Check if the instance is blacklisted
+        with blacklist_lock:
+            if instance_key in blacklist:
+                if datetime.now() >= blacklist[instance_key]:
+                    # Blacklist period has expired; remove from blacklist
+                    del blacklist[instance_key]
+                    print(f"Blacklist expired for instance {instance_index + 1} ({host}).")
+                else:
+                    # Instance is still blacklisted; skip to the next one
+                    print(f"Instance {instance_index + 1} ({host}) is blacklisted until {blacklist[instance_key]}. Skipping...")
+                    continue
 
-            # Raise an HTTPError for bad responses (4xx and 5xx)
-            response.raise_for_status()
+        # If we reach here, the instance is not blacklisted
+        all_instances_blacklisted = False  # At least one instance is available
 
-            # Log success and return response
-            print(f"Success: Connected to {upstream_server} and received response with status code {response.status_code}")
-            return response
+        for retry in range(1, retries_per_instance + 1):
+            try:
+                url = f"{host}/{endpoint}"
+                print(f"Attempt {retry}/{retries_per_instance} on instance {instance_index + 1} ({host})...")
 
-        except requests.exceptions.HTTPError as e:
-            # Increment attempts and handle retries
-            attempts += 1
-            print(f"HTTPError on Instance-{instance_index + 1}, attempt {attempts}: {e}")
+                response = requests.post(url, json=payload, timeout=timeout)
+                response.raise_for_status()  # Raises HTTPError for bad responses (4xx or 5xx)
 
-            # Check if retries on the current instance are exhausted
-            if attempts % retries_per_instance == 0:
-                # Switch to the next instance
-                instance_index = (instance_index + 1) % total_instances
-                print(f"Switching to the next instance: Instance-{instance_index + 1}")
+                print(f"Success: Received response with status code {response.status_code} on instance {instance_index + 1}")
+                return response
 
-            print(f"Retrying on Instance-{instance_index + 1} (Attempt {attempts % retries_per_instance + 1}/{retries_per_instance})...")
+            except requests.exceptions.HTTPError as e:
+                print(f"HTTPError on attempt {retry} for instance {instance_index + 1}: {e}")
+            except requests.exceptions.RequestException as e:
+                print(f"RequestException on attempt {retry} for instance {instance_index + 1}: {e}")
 
-        except requests.exceptions.RequestException as e:
-            # Increment attempts and handle retries
-            attempts += 1
-            print(f"RequestException on Instance-{instance_index + 1}, attempt {attempts}: {e}")
+        # After all retries for the current instance have failed, add it to the blacklist
+        with blacklist_lock:
+            blacklist_expiry = datetime.now() + blacklist_duration
+            blacklist[instance_key] = blacklist_expiry
+            print(f"All {retries_per_instance} retries failed on instance {instance_index + 1} ({host}).")
+            print(f"Instance {instance_index + 1} ({host}) has been blacklisted until {blacklist_expiry}.\n")
 
-            # Check if retries on the current instance are exhausted
-            if attempts % retries_per_instance == 0:
-                # Switch to the next instance
-                instance_index = (instance_index + 1) % total_instances
-                print(f"Switching to the next instance: Instance-{instance_index + 1}")
+    if all_instances_blacklisted:
+        # If all instances are currently blacklisted
+        print("All instances are currently blacklisted. Circuit breaker is triggered.")
+    else:
+        # If some instances were available but all failed
+        print("All available instances have failed. Circuit breaker is triggered.")
 
-            print(f"Retrying on Instance-{instance_index + 1} (Attempt {attempts % retries_per_instance + 1}/{retries_per_instance})...")
-
-    # If all retries are exhausted
-    raise Exception("Max retries exceeded. All instances are unavailable.")
+    # If all retries are exhausted on all instances, raise an exception with a custom message
+    raise Exception("Circuit breaker is triggered. All instances are unavailable.")
 
 def call_user_location_service(endpoint, payload):
     return call_service_with_retry(endpoint, payload, "user-location")

@@ -14,12 +14,13 @@
     "@grpc/proto-loader": "^0.7.13",
     "async": "^3.2.4",
     "axios": "^1.4.0",
+    "consistent-hash": "^1.2.2",
     "express": "^4.21.0",
     "mongodb": "^6.9.0",
     "p-limit": "^6.1.0",
+    "prom-client": "^14.1.1",
     "redis": "^4.7.0",
     "uuid": "^10.0.0",
-    "ws": "^8.18.0",
-    "prom-client": "^14.1.1"
+    "ws": "^8.18.0"
   }
 }

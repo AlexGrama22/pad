@@ -46,9 +46,9 @@ SERVICE_HOSTS = {
 blacklist = {}
 
 def call_service_with_retry(endpoint, payload, service_type):
-    retries_per_instance = 5  # Number of retries per instance
-    timeout = 10  # Timeout in seconds for each request
-    blacklist_duration = timedelta(minutes=1)  # Duration to blacklist an instance
+    retries_per_instance = 5  
+    timeout = 10  
+    blacklist_duration = timedelta(minutes=1)  
 
     if service_type not in SERVICE_HOSTS:
         raise ValueError(f"Unknown service type: {service_type}")

@@ -155,14 +155,62 @@ const getHealthyPrimary = () => {
 const cacheData = async (key, value) => {
   try {
     const shardIndex = getShardForKey(key);
-    console.log(`Storing key ${key} in shard ${shardIndex + 1}`);
-    const primaryShard = redisPrimaries[shardIndex];
+    console.log(`Attempting to store key ${key} in primary shard ${shardIndex + 1}`);
 
+    // Check primary health
+    if (!primaryHealth.get(shardIndex)) {
+      console.warn(`Primary shard ${shardIndex + 1} is down. Queueing write for later.`);
+      // Add the write operation to a queue (could be in-memory or persistent storage)
+      // For simplicity, this example uses an array
+      writeQueue.push({ key, value, shardIndex });
+      return;
+    }
+
+    // Write to healthy primary
+    const primaryShard = redisPrimaries[shardIndex];
     await primaryShard.set(key, JSON.stringify(value), 'EX', 3600);
+    console.log(`Successfully stored key ${key} in primary shard ${shardIndex + 1}`);
   } catch (err) {
     console.error(`Error caching key ${key}:`, err);
   }
 };
+
+
+const processWriteQueue = async () => {
+  while (writeQueue.length > 0) {
+    const { key, value, shardIndex } = writeQueue.shift();
+    try {
+      if (primaryHealth.get(shardIndex)) {
+        const primaryShard = redisPrimaries[shardIndex];
+        await primaryShard.set(key, JSON.stringify(value), 'EX', 3600);
+        console.log(`Flushed queued write for key ${key} to primary shard ${shardIndex + 1}`);
+      } else {
+        console.warn(`Primary shard ${shardIndex + 1} is still down. Re-queuing write.`);
+        writeQueue.push({ key, value, shardIndex });
+        break; // Exit to avoid rapid retry
+      }
+    } catch (err) {
+      console.error(`Error processing queued write for key ${key}:`, err);
+      writeQueue.push({ key, value, shardIndex }); // Re-queue on failure
+    }
+  }
+};
+
+setInterval(() => {
+  redisPrimaries.forEach((primary, index) => {
+    primary.ping()
+      .then(() => {
+        if (!primaryHealth.get(index)) {
+          console.log(`Primary shard ${index + 1} is back online.`);
+          primaryHealth.set(index, true);
+          processWriteQueue(); // Flush queued writes
+        }
+      })
+      .catch(() => {
+        primaryHealth.set(index, false);
+      });
+  });
+}, 5000); // Check every 5 seconds
 
 
 // Task queue with concurrency limit of 2
@@ -174,24 +222,36 @@ const taskQueue = async.queue(async (task) => {
 // Get data: Tries primary, falls back to replica
 
 const getCachedData = async (key) => {
-  try {
-    const shardIndex = getShardForKey(key); // Consistent hashing
-    console.log(`Accessing shard ${shardIndex + 1} for key: ${key}`);
-    const primaryShard = redisPrimaries[shardIndex];
-    const data = await primaryShard.get(key);
+  const shardIndex = getShardForKey(key);
+  const primaryShard = redisPrimaries[shardIndex];
+  const replicaShard = redisReplicas[shardIndex];
 
+  try {
+    console.log(`Attempting to access key ${key} on primary shard ${shardIndex + 1}`);
+    const data = await primaryShard.get(key);
     if (data) {
-      console.log(`Cache hit for key ${key} on shard ${shardIndex + 1}`);
+      recordCacheMetrics(true, shardIndex);
       return JSON.parse(data);
-    } else {
-      console.warn(`Cache miss for key ${key} on shard ${shardIndex + 1}`);
     }
   } catch (err) {
-    console.error(`Error retrieving key ${key}:`, err);
+    console.warn(`Primary shard ${shardIndex + 1} failed for key ${key}:`, err);
   }
 
+  try {
+    console.log(`Falling back to replica shard ${shardIndex + 1} for key ${key}`);
+    const data = await replicaShard.get(key);
+    if (data) {
+      recordCacheMetrics(true, shardIndex);
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error(`Replica shard ${shardIndex + 1} failed for key ${key}:`, err);
+  }
+
+  recordCacheMetrics(false, shardIndex);
   return null;
 };
+
 
 // Mock function to calculate estimated price
 function calculateEstimatedPrice(startLatitude, startLongitude, endLatitude, endLongitude) {

@@ -8,6 +8,7 @@ const WebSocket = require('ws');
 const app = express();
 const rooms = {};
 const client = require('prom-client');
+const HashRing = require('hashring');
 
 app.use(express.json());
 
@@ -20,6 +21,12 @@ const pool = new Pool({
   port: 5432,
 });
 
+
+const redisRing = new HashRing([
+  'redis-shard1-primary',
+  'redis-shard2-primary',
+  'redis-shard3-primary',
+]);
 
 // Redis primary and replica setup
 const redisPrimaries = [
@@ -36,6 +43,15 @@ const redisReplicas = [
 
 const register = new client.Registry();
 client.collectDefaultMetrics({ register }); // Collect default metrics
+
+const getShardForKey = (key) => {
+  const shardName = redisRing.get(key); // Returns the shard name
+  const shardIndex = redisPrimaries.findIndex((shard) => shard.options.host === shardName);
+  if (shardIndex === -1) {
+    throw new Error(`Shard not found for key: ${key}`);
+  }
+  return shardIndex;
+};
 
 
 // Custom Prometheus Metrics
@@ -134,25 +150,20 @@ const getHealthyPrimary = () => {
   throw new Error('No healthy primary Redis shards available');
 };
 
-const getShardIndex = (key) => key.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % redisPrimaries.length;
 
 // Cache data: Writes to a healthy primary
 const cacheData = async (key, value) => {
   try {
-    const shardIndex = getShardIndex(key); // Calculate shard index based on key hash
-    const primaryShard = redisPrimaries[shardIndex]; // Get the primary shard for the calculated index
+    const shardIndex = getShardForKey(key);
+    console.log(`Storing key ${key} in shard ${shardIndex + 1}`);
+    const primaryShard = redisPrimaries[shardIndex];
 
-    // Check if the selected primary shard is healthy
-    if (!primaryHealth.get(shardIndex)) {
-      throw new Error(`Primary Redis Shard ${shardIndex + 1} is unavailable`);
-    }
-
-    await primaryShard.set(key, JSON.stringify(value), 'EX', 3600); // Set with 1-hour TTL
-    console.log(`Key ${key} cached in Primary Shard ${shardIndex + 1}`);
+    await primaryShard.set(key, JSON.stringify(value), 'EX', 3600);
   } catch (err) {
     console.error(`Error caching key ${key}:`, err);
   }
 };
+
 
 // Task queue with concurrency limit of 2
 const taskQueue = async.queue(async (task) => {
@@ -161,32 +172,24 @@ const taskQueue = async.queue(async (task) => {
 
 
 // Get data: Tries primary, falls back to replica
+
 const getCachedData = async (key) => {
-  const shardIndex = getShardIndex(key);
-  const primary = redisPrimaries[shardIndex];
-  const replica = redisReplicas[shardIndex];
-
   try {
-    const data = await primary.get(key);
+    const shardIndex = getShardForKey(key); // Consistent hashing
+    console.log(`Accessing shard ${shardIndex + 1} for key: ${key}`);
+    const primaryShard = redisPrimaries[shardIndex];
+    const data = await primaryShard.get(key);
+
     if (data) {
-      console.log(`Cache hit for key ${key} on Primary Shard ${shardIndex + 1}`);
+      console.log(`Cache hit for key ${key} on shard ${shardIndex + 1}`);
       return JSON.parse(data);
+    } else {
+      console.warn(`Cache miss for key ${key} on shard ${shardIndex + 1}`);
     }
-  } catch (primaryErr) {
-    console.warn(`Primary shard ${shardIndex + 1} unavailable for key ${key}:`, primaryErr);
+  } catch (err) {
+    console.error(`Error retrieving key ${key}:`, err);
   }
 
-  try {
-    const replicaData = await replica.get(key);
-    if (replicaData) {
-      console.log(`Cache hit for key ${key} on Replica Shard ${shardIndex + 1}`);
-      return JSON.parse(replicaData);
-    }
-  } catch (replicaErr) {
-    console.error(`Replica Shard ${shardIndex + 1} unavailable for key ${key}:`, replicaErr);
-  }
-
-  console.log(`Cache miss for key ${key}`);
   return null;
 };
 
@@ -326,6 +329,7 @@ app.post('/make_order', async (req, res) => {
   res.json({ orderId, estimatedPrice });
 });
 
+
 // AcceptOrder endpoint with fallback to slaves if masters are unavailable
 app.post('/accept_order', async (req, res) => {
   const { orderId, driverId } = req.body;
@@ -335,56 +339,32 @@ app.post('/accept_order', async (req, res) => {
   }
 
   let orderData;
+  try {
+    orderData = await getCachedData(orderId);
 
-  // Helper function to check all masters or slaves for data
-  const checkRedisInstances = async (instances, key) => {
-    for (const [index, instance] of instances.entries()) {
-      try {
-        const data = await instance.get(key);
-        if (data) {
-          console.log(`Cache hit for key ${key} on Redis Instance ${index + 1}`);
-          return JSON.parse(data);
-        }
-      } catch (err) {
-        console.warn(`Redis Instance ${index + 1} unavailable or key not found:`, err);
-      }
+    if (!orderData) {
+      return res.status(404).json({ error: `Order ${orderId} not found in Redis` });
     }
-    return null;
-  };
-
-  // Try to retrieve data from all running master instances
-  orderData = await checkRedisInstances(redisPrimaries, orderId);
-
-  // If not found in masters, check all slave instances
-  if (!orderData) {
-    console.warn(`Key ${orderId} not found in any master, checking slaves...`);
-    orderData = await checkRedisInstances(redisReplicas, orderId);
+  } catch (redisErr) {
+    console.error('Redis error:', redisErr);
+    return res.status(500).json({ error: 'Redis error during order retrieval' });
   }
 
-  // If still not found, return 404
-  if (!orderData) {
-    return res.status(404).json({ error: 'Order not found in Redis (Masters or Slaves)' });
-  }
+  const rideId = uuidv4();
 
-  const rideId = uuidv4(); // Unique ride ID
-
-  // Save to PostgreSQL
   try {
     await pool.query('INSERT INTO rides (userId, rideId, driverId) VALUES ($1, $2, $3)', [
       orderData.userId,
       rideId,
       driverId,
     ]);
-    console.log('Ride saved to PostgreSQL:', { userId: orderData.userId, rideId, driverId });
     res.json({ rideId, ...orderData });
-  } catch (err) {
-    console.error('Error saving ride data to PostgreSQL:', err);
-    res.status(500).json({ error: 'Error saving ride data to PostgreSQL' });
+  } catch (pgErr) {
+    console.error('PostgreSQL error:', pgErr);
+    res.status(500).json({ error: 'Database error during ride creation' });
   }
 });
 
-
-// FinishOrder endpoint
 app.post('/finish_order', (req, res) => {
   taskQueue.push(async () => {
     const { rideId, realPrice } = req.body;
@@ -395,7 +375,6 @@ app.post('/finish_order', (req, res) => {
 
     const paymentStatus = 'notPaid';
 
-    // Retrieve userId from PostgreSQL
     let userId;
     try {
       const result = await pool.query('SELECT userId FROM rides WHERE rideId = $1', [rideId]);
@@ -409,7 +388,6 @@ app.post('/finish_order', (req, res) => {
       return res.status(500).json({ error: 'Error retrieving ride data' });
     }
 
-    // Notify ride-payment-service via WebSocket
     const message = {
       event: 'finish_order',
       data: {
@@ -424,6 +402,7 @@ app.post('/finish_order', (req, res) => {
     res.json({ paymentStatus, userId });
   });
 });
+
 
 // PaymentCheck endpoint
 app.post('/payment_check', (req, res) => {

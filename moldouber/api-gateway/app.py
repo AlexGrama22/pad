@@ -227,6 +227,46 @@ def process_payment():
     except Exception as e:
         # Catch all other exceptions
         return jsonify({"error": str(e)}), 503
+    
+
+@app.route('/api/saga', methods=['POST'])
+def execute_saga():
+    data = request.json
+    transaction_id = data.get('transactionId')
+    steps = data.get('steps')  # Steps define the saga flow
+
+    if not transaction_id or not steps:
+        return jsonify({"status": "failed", "reason": "Missing required fields"}), 400
+
+    # Results to track success and failures
+    results = {}
+    compensations = []
+
+    try:
+        for step in steps:
+            # Forward action
+            service_url = step['forward']['url']
+            payload = step['forward']['payload']
+
+            response = requests.post(service_url, json=payload)
+            results[step['name']] = response.json()
+
+            if response.status_code != 200:
+                raise Exception(f"Step {step['name']} failed with: {response.json()}")
+
+            # Add compensating action to the stack
+            compensations.append(step['compensate'])
+    except Exception as e:
+        # Execute compensating actions on failure
+        for compensation in reversed(compensations):
+            try:
+                requests.post(compensation['url'], json=compensation['payload'])
+            except Exception as rollback_error:
+                print(f"Compensation failed: {rollback_error}")
+
+        return jsonify({"status": "failed", "reason": str(e), "results": results}), 500
+
+    return jsonify({"status": "completed", "results": results}), 200
 
 # Endpoint to check payment status
 @app.route('/api/user/check_payment_status', methods=['POST'])

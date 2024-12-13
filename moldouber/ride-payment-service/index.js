@@ -175,6 +175,38 @@ app.post('/process_payment', async (req, res) => {
   }
 });
 
+app.post('/saga/forward', async (req, res) => {
+  const { transactionId, rideId, amount, userId } = req.body;
+
+  if (!transactionId || !rideId || !amount || !userId) {
+      return res.status(400).json({ status: 'failed', reason: 'Missing required fields' });
+  }
+
+  try {
+      await paymentsCollection.insertOne({ transactionId, rideId, amount, userId, status: 'Paid' });
+      res.status(200).json({ status: 'success' });
+  } catch (err) {
+      res.status(500).json({ status: 'failed', reason: err.message });
+  }
+});
+
+
+app.post('/saga/compensate', async (req, res) => {
+  const { transactionId, rideId } = req.body;
+
+  if (!transactionId || !rideId) {
+      return res.status(400).json({ status: 'failed', reason: 'Missing required fields' });
+  }
+
+  try {
+      await paymentsCollection.deleteOne({ transactionId, rideId });
+      res.status(200).json({ status: 'compensated' });
+  } catch (err) {
+      res.status(500).json({ status: 'failed', reason: err.message });
+  }
+});
+
+
 // Metrics endpoint
 app.get('/metrics', async (req, res) => {
   res.setHeader('Content-Type', register.contentType);

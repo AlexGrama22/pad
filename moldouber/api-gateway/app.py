@@ -228,7 +228,6 @@ def process_payment():
         # Catch all other exceptions
         return jsonify({"error": str(e)}), 503
     
-
 @app.route('/api/saga', methods=['POST'])
 def execute_saga():
     data = request.json
@@ -248,25 +247,53 @@ def execute_saga():
             service_url = step['forward']['url']
             payload = step['forward']['payload']
 
+            print(f"Executing forward action for {step['name']} at {service_url}")
             response = requests.post(service_url, json=payload)
-            results[step['name']] = response.json()
 
-            if response.status_code != 200:
-                raise Exception(f"Step {step['name']} failed with: {response.json()}")
+            # Include operation in the response for clarity
+            step_result = response.json()
+            step_result['operation'] = 'forward'
+            results[step['name']] = step_result
+
+            if response.status_code != 200 or step_result.get('status') != 'success':
+                raise Exception(f"Step {step['name']} failed")
 
             # Add compensating action to the stack
             compensations.append(step['compensate'])
+
     except Exception as e:
+        # Track compensations that were executed
+        compensation_results = {}
+
         # Execute compensating actions on failure
         for compensation in reversed(compensations):
             try:
-                requests.post(compensation['url'], json=compensation['payload'])
+                print(f"Executing compensate action for {compensation['url']}")
+                comp_response = requests.post(compensation['url'], json=compensation['payload'])
+                compensation_results[compensation['url']] = {
+                    "status": "compensated",
+                    "operation": "compensate",
+                    "message": f"Compensate operation completed for transaction {compensation['payload']['transactionId']}"
+                }
             except Exception as rollback_error:
                 print(f"Compensation failed: {rollback_error}")
+                compensation_results[compensation['url']] = {
+                    "status": "failed",
+                    "operation": "compensate",
+                    "reason": str(rollback_error)
+                }
 
-        return jsonify({"status": "failed", "reason": str(e), "results": results}), 500
+        # Return failure status with details of compensations
+        return jsonify({
+            "status": "failed",
+            "reason": str(e),
+            "results": results,
+            "compensations": compensation_results
+        }), 500
 
     return jsonify({"status": "completed", "results": results}), 200
+
+
 
 # Endpoint to check payment status
 @app.route('/api/user/check_payment_status', methods=['POST'])

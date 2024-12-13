@@ -309,43 +309,6 @@ function broadcastToRoom(orderId, message) {
   }
 }
 
-app.post('/saga/forward', async (req, res) => {
-  const { transactionId, userId, location } = req.body;
-
-  if (!transactionId || !userId || !location) {
-      return res.status(400).json({ status: 'failed', reason: 'Missing required fields' });
-  }
-
-  try {
-      await pool.query(
-          'INSERT INTO locations (transaction_id, user_id, location) VALUES ($1, $2, $3)',
-          [transactionId, userId, location]
-      );
-      res.status(200).json({ status: 'success' });
-      // res.status(500).json({ status: 'failed', reason: err.message });
-  } catch (err) {
-      console.error('Error during forward action:', err.message);
-      res.status(500).json({ status: 'failed', reason: err.message });
-  }
-});
-
-
-app.post('/saga/compensate', async (req, res) => {
-  const { transactionId, userId, location } = req.body;
-
-  if (!transactionId || !userId || !location) {
-      return res.status(400).json({ status: 'failed', reason: 'Missing required fields' });
-  }
-
-  try {
-      await pool.query('DELETE FROM locations WHERE user_id = $1 AND location = $2', [userId, location]);
-      res.status(200).json({ status: 'compensated' });
-  } catch (err) {
-      res.status(500).json({ status: 'failed', reason: err.message });
-  }
-});
-
-
 // MakeOrder endpoint with Redis caching
 app.post('/make_order', async (req, res) => {
   const { userId, startLongitude, startLatitude, endLongitude, endLatitude } = req.body;
@@ -507,6 +470,67 @@ app.get('/metrics', async (req, res) => {
 // Express app for status
 app.get('/status', (req, res) => {
   res.status(200).json({ status: 'User Location Service is running' });
+});
+
+// Forward operation for saga
+app.post('/saga/forward', async (req, res) => {
+  const { transactionId, userId, location } = req.body;
+
+  if (!transactionId || !userId || !location) {
+      return res.status(400).json({ 
+          status: 'failed', 
+          reason: 'Missing required fields', 
+          operation: 'forward' 
+      });
+  }
+
+  try {
+      await pool.query(
+          'INSERT INTO locations (transaction_id, user_id, location) VALUES ($1, $2, $3)',
+          [transactionId, userId, location]
+      );
+      res.status(200).json({ 
+          status: 'success', 
+          operation: 'forward', 
+          message: `Forward operation completed for transaction ${transactionId}` 
+      });
+  } catch (err) {
+      console.error('Error during forward action:', err.message);
+      res.status(500).json({ 
+          status: 'failed', 
+          reason: err.message, 
+          operation: 'forward' 
+      });
+  }
+});
+
+// Compensate operation for saga
+app.post('/saga/compensate', async (req, res) => {
+  const { transactionId, userId, location } = req.body;
+
+  if (!transactionId || !userId || !location) {
+      return res.status(400).json({ 
+          status: 'failed', 
+          reason: 'Missing required fields', 
+          operation: 'compensate' 
+      });
+  }
+
+  try {
+      await pool.query('DELETE FROM locations WHERE user_id = $1 AND location = $2', [userId, location]);
+      res.status(200).json({ 
+          status: 'compensated', 
+          operation: 'compensate', 
+          message: `Compensate operation completed for transaction ${transactionId}` 
+      });
+  } catch (err) {
+      console.error('Error during compensate action:', err.message);
+      res.status(500).json({ 
+          status: 'failed', 
+          reason: err.message, 
+          operation: 'compensate' 
+      });
+  }
 });
 
 // Start the HTTP server

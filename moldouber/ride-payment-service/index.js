@@ -175,37 +175,6 @@ app.post('/process_payment', async (req, res) => {
   }
 });
 
-app.post('/saga/forward', async (req, res) => {
-  const { transactionId, rideId, amount, userId } = req.body;
-
-  if (!transactionId || !rideId || !amount || !userId) {
-      return res.status(400).json({ status: 'failed', reason: 'Missing required fields' });
-  }
-
-  try {
-      await paymentsCollection.insertOne({ transactionId, rideId, amount, userId, status: 'Paid' });
-      res.status(200).json({ status: 'success' });
-  } catch (err) {
-      res.status(500).json({ status: 'failed', reason: err.message });
-  }
-});
-
-
-app.post('/saga/compensate', async (req, res) => {
-  const { transactionId, rideId } = req.body;
-
-  if (!transactionId || !rideId) {
-      return res.status(400).json({ status: 'failed', reason: 'Missing required fields' });
-  }
-
-  try {
-      await paymentsCollection.deleteOne({ transactionId, rideId });
-      res.status(200).json({ status: 'compensated' });
-  } catch (err) {
-      res.status(500).json({ status: 'failed', reason: err.message });
-  }
-});
-
 
 // Metrics endpoint
 app.get('/metrics', async (req, res) => {
@@ -217,6 +186,73 @@ app.get('/metrics', async (req, res) => {
 app.get('/status', (req, res) => {
   res.status(200).json({ status: 'Ride Payment Service is running' });
 });
+
+// Forward operation for saga
+app.post('/saga/forward', async (req, res) => {
+  const { transactionId, rideId, amount, userId } = req.body;
+
+  if (!transactionId || !rideId || !amount || !userId) {
+      return res.status(400).json({ 
+          status: 'failed', 
+          reason: 'Missing required fields', 
+          operation: 'forward' 
+      });
+  }
+
+  try {
+      await paymentsCollection.insertOne({ transactionId, rideId, amount, userId, status: 'Paid' });
+      res.status(200).json({ 
+          status: 'success', 
+          operation: 'forward', 
+          message: `Forward operation completed for transaction ${transactionId}` 
+      });
+  } catch (err) {
+      console.error('Error during forward action:', err.message);
+      res.status(500).json({ 
+          status: 'failed', 
+          reason: err.message, 
+          operation: 'forward' 
+      });
+  }
+});
+
+// Compensate operation for saga
+app.post('/saga/compensate', async (req, res) => {
+  const { transactionId, rideId } = req.body;
+
+  if (!transactionId || !rideId) {
+      return res.status(400).json({ 
+          status: 'failed', 
+          reason: 'Missing required fields', 
+          operation: 'compensate' 
+      });
+  }
+
+  try {
+      const result = await paymentsCollection.deleteOne({ transactionId, rideId });
+      if (result.deletedCount > 0) {
+          res.status(200).json({ 
+              status: 'compensated', 
+              operation: 'compensate', 
+              message: `Compensate operation completed for transaction ${transactionId}` 
+          });
+      } else {
+          res.status(404).json({ 
+              status: 'failed', 
+              reason: `No matching record found for transactionId ${transactionId} and rideId ${rideId}`, 
+              operation: 'compensate' 
+          });
+      }
+  } catch (err) {
+      console.error('Error during compensate action:', err.message);
+      res.status(500).json({ 
+          status: 'failed', 
+          reason: err.message, 
+          operation: 'compensate' 
+      });
+  }
+});
+
 
 // Start the HTTP server
 app.listen(SERVICE_PORT, () => {

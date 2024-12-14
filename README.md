@@ -173,6 +173,7 @@ To check payment data in MongoDB:
 mongosh
 use ridepaymentdb
 db.payments.find().pretty()
+db.payments.find({ transactionId: '1227' }).pretty();
 ```
 
 ### Accessing Redis (User Management & Delivery Service)

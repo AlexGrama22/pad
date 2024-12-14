@@ -164,6 +164,7 @@ To check the data in PostgreSQL:
 ```bash
 psql -U myuser -d userlocationdb
 SELECT * FROM rides;
+SELECT * FROM locations;
 ```
 
 ### Accessing MongoDB (Ride Payment Service)
